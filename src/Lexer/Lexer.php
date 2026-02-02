@@ -79,6 +79,7 @@ final class Lexer
 
                 return new Token(TokenType::Newline, "\r\n", $line, $column);
             }
+
             // Bare CR is treated as whitespace, skip it
             return null;
         }
@@ -911,6 +912,8 @@ final class Lexer
             return false;
         }
 
-        return ctype_alnum($char) || $char === '-' || $char === '_' || $char === ':';
+        // TOML spec: unquoted-key = 1*( ALPHA / DIGIT / %x2D / %x5F )
+        // Only A-Z, a-z, 0-9, hyphen (-), and underscore (_) are allowed
+        return ctype_alnum($char) || $char === '-' || $char === '_';
     }
 }

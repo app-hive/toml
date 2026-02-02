@@ -97,6 +97,165 @@ describe('Lexer', function () {
             expect($tokens[0]->type)->toBe(TokenType::BareKey);
             expect($tokens[0]->value)->toBe('key_name-value');
         });
+
+        it('tokenizes digit-starting strings as integers then bare key suffix', function () {
+            // When lexing "123abc", the lexer first sees digits and parses "123" as Integer
+            // Then "abc" is parsed as a bare key. The parser decides context.
+            $lexer = new Lexer('123abc');
+            $tokens = $lexer->tokenize();
+
+            // The lexer returns Integer for the numeric prefix
+            expect($tokens[0]->type)->toBe(TokenType::Integer);
+            expect($tokens[0]->value)->toBe('123');
+            expect($tokens[1]->type)->toBe(TokenType::BareKey);
+            expect($tokens[1]->value)->toBe('abc');
+        });
+
+        it('tokenizes all-digit strings as integers', function () {
+            // Numeric-only strings are parsed as integers
+            // The parser determines if they're used as keys
+            $lexer = new Lexer('123 = "value"');
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[0]->type)->toBe(TokenType::Integer);
+            expect($tokens[0]->value)->toBe('123');
+        });
+
+        it('tokenizes bare keys with uppercase letters', function () {
+            $lexer = new Lexer('KEY');
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[0]->type)->toBe(TokenType::BareKey);
+            expect($tokens[0]->value)->toBe('KEY');
+        });
+
+        it('tokenizes bare keys with mixed case', function () {
+            $lexer = new Lexer('MyKey');
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[0]->type)->toBe(TokenType::BareKey);
+            expect($tokens[0]->value)->toBe('MyKey');
+        });
+
+        it('is case sensitive', function () {
+            $lexer1 = new Lexer('key');
+            $lexer2 = new Lexer('KEY');
+            $lexer3 = new Lexer('Key');
+
+            $tokens1 = $lexer1->tokenize();
+            $tokens2 = $lexer2->tokenize();
+            $tokens3 = $lexer3->tokenize();
+
+            expect($tokens1[0]->value)->toBe('key');
+            expect($tokens2[0]->value)->toBe('KEY');
+            expect($tokens3[0]->value)->toBe('Key');
+
+            // All different values (case sensitive)
+            expect($tokens1[0]->value)->not->toBe($tokens2[0]->value);
+            expect($tokens1[0]->value)->not->toBe($tokens3[0]->value);
+        });
+
+        it('tokenizes bare keys with only underscores', function () {
+            $lexer = new Lexer('___');
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[0]->type)->toBe(TokenType::BareKey);
+            expect($tokens[0]->value)->toBe('___');
+        });
+
+        it('tokenizes bare keys with only hyphens', function () {
+            $lexer = new Lexer('---');
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[0]->type)->toBe(TokenType::BareKey);
+            expect($tokens[0]->value)->toBe('---');
+        });
+
+        it('tokenizes bare keys starting with underscore', function () {
+            $lexer = new Lexer('_key');
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[0]->type)->toBe(TokenType::BareKey);
+            expect($tokens[0]->value)->toBe('_key');
+        });
+
+        it('tokenizes bare keys starting with hyphen', function () {
+            $lexer = new Lexer('-key');
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[0]->type)->toBe(TokenType::BareKey);
+            expect($tokens[0]->value)->toBe('-key');
+        });
+
+        it('tokenizes bare keys in key-value context', function () {
+            $lexer = new Lexer('my-key_123 = "value"');
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[0]->type)->toBe(TokenType::BareKey);
+            expect($tokens[0]->value)->toBe('my-key_123');
+            expect($tokens[1]->type)->toBe(TokenType::Equals);
+        });
+
+        it('tokenizes bare keys in table header', function () {
+            $lexer = new Lexer('[my_table-name]');
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[0]->type)->toBe(TokenType::LeftBracket);
+            expect($tokens[1]->type)->toBe(TokenType::BareKey);
+            expect($tokens[1]->value)->toBe('my_table-name');
+            expect($tokens[2]->type)->toBe(TokenType::RightBracket);
+        });
+
+        it('tokenizes bare keys in dotted key', function () {
+            $lexer = new Lexer('parent.child_key.sub-key');
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[0]->type)->toBe(TokenType::BareKey);
+            expect($tokens[0]->value)->toBe('parent');
+            expect($tokens[1]->type)->toBe(TokenType::Dot);
+            expect($tokens[2]->type)->toBe(TokenType::BareKey);
+            expect($tokens[2]->value)->toBe('child_key');
+            expect($tokens[3]->type)->toBe(TokenType::Dot);
+            expect($tokens[4]->type)->toBe(TokenType::BareKey);
+            expect($tokens[4]->value)->toBe('sub-key');
+        });
+
+        it('parses equals sign as structural token, not bare key error', function () {
+            // The equals sign is a valid structural token
+            // Whether it's semantically valid depends on the parser
+            $lexer = new Lexer('= "value"');
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[0]->type)->toBe(TokenType::Equals);
+        });
+
+        it('stops bare key at invalid character', function () {
+            // Characters like @ should stop the bare key parsing
+            $lexer = new Lexer('key@invalid');
+            $lexer->tokenize();
+        })->throws(TomlParseException::class, 'Unexpected character');
+
+        it('stops bare key at colon character', function () {
+            // Colon is not a valid bare key character per TOML spec
+            $lexer = new Lexer('key:value');
+            $lexer->tokenize();
+        })->throws(TomlParseException::class, 'Unexpected character');
+
+        it('does not allow special characters in bare keys', function () {
+            // Only A-Za-z0-9_- are allowed in bare keys
+            // Note: # is excluded because it starts a comment
+            $invalidChars = ['!', '@', '$', '%', '^', '&', '*', '(', ')', '+', '/', '\\', '|', '~', '`'];
+
+            foreach ($invalidChars as $char) {
+                $lexer = new Lexer("key{$char}test");
+                try {
+                    $lexer->tokenize();
+                    throw new \Exception("Should have thrown for character: {$char}");
+                } catch (TomlParseException $e) {
+                    expect($e->getMessage())->toContain('Unexpected character');
+                }
+            }
+        });
     });
 
     describe('basic strings', function () {
@@ -281,7 +440,7 @@ describe('Lexer', function () {
             })->throws(TomlParseException::class, 'Invalid escape sequence: \\0');
 
             it('provides line and column for invalid escape sequence', function () {
-                $lexer = new Lexer("key = \"test\\qvalue\"");
+                $lexer = new Lexer('key = "test\\qvalue"');
 
                 try {
                     $lexer->tokenize();
