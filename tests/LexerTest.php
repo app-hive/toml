@@ -376,6 +376,51 @@ describe('Lexer', function () {
                 $lexer = new Lexer('"\\u00GG"');
                 $lexer->tokenize();
             })->throws(TomlParseException::class, 'Invalid unicode escape character');
+
+            it('throws on out-of-range unicode escape (> U+10FFFF)', function () {
+                $lexer = new Lexer('"\\UFFFFFFFF"');
+                $lexer->tokenize();
+            })->throws(TomlParseException::class, 'is out of range');
+
+            it('throws on surrogate pair unicode escape (U+D800)', function () {
+                $lexer = new Lexer('"\\uD800"');
+                $lexer->tokenize();
+            })->throws(TomlParseException::class, 'is a surrogate pair');
+
+            it('throws on surrogate pair unicode escape (U+DFFF)', function () {
+                $lexer = new Lexer('"\\uDFFF"');
+                $lexer->tokenize();
+            })->throws(TomlParseException::class, 'is a surrogate pair');
+
+            it('throws on surrogate pair in 8-digit form', function () {
+                $lexer = new Lexer('"\\U0000D800"');
+                $lexer->tokenize();
+            })->throws(TomlParseException::class, 'is a surrogate pair');
+
+            it('handles boundary code points correctly', function () {
+                // U+10FFFF is the maximum valid code point
+                $lexer = new Lexer('"\\U0010FFFF"');
+                $tokens = $lexer->tokenize();
+
+                // This should decode to the maximum valid Unicode character
+                expect(mb_ord($tokens[0]->value, 'UTF-8'))->toBe(0x10FFFF);
+            });
+
+            it('handles code point just before surrogate range', function () {
+                // U+D7FF is just before surrogate range
+                $lexer = new Lexer('"\\uD7FF"');
+                $tokens = $lexer->tokenize();
+
+                expect(mb_ord($tokens[0]->value, 'UTF-8'))->toBe(0xD7FF);
+            });
+
+            it('handles code point just after surrogate range', function () {
+                // U+E000 is just after surrogate range
+                $lexer = new Lexer('"\\uE000"');
+                $tokens = $lexer->tokenize();
+
+                expect(mb_ord($tokens[0]->value, 'UTF-8'))->toBe(0xE000);
+            });
         });
 
         describe('TOML 1.1.0 escape sequences', function () {

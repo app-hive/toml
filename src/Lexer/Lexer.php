@@ -387,9 +387,29 @@ final class Lexer
             $hex .= $this->advance();
         }
 
-        $codePoint = hexdec($hex);
+        $codePoint = (int) hexdec($hex);
 
-        return mb_chr((int) $codePoint, 'UTF-8');
+        // Validate code point is within Unicode range (U+0000 to U+10FFFF)
+        if ($codePoint > 0x10FFFF) {
+            throw new TomlParseException(
+                'Unicode code point U+'.strtoupper(dechex($codePoint)).' is out of range (max U+10FFFF)',
+                $this->line,
+                $this->column,
+                $this->source
+            );
+        }
+
+        // Reject surrogate pairs (U+D800 to U+DFFF) - not valid Unicode scalar values
+        if ($codePoint >= 0xD800 && $codePoint <= 0xDFFF) {
+            throw new TomlParseException(
+                'Unicode code point U+'.strtoupper(dechex($codePoint)).' is a surrogate pair (U+D800 to U+DFFF) which is not allowed',
+                $this->line,
+                $this->column,
+                $this->source
+            );
+        }
+
+        return mb_chr($codePoint, 'UTF-8');
     }
 
     private function scanLiteralString(): Token

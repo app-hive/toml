@@ -213,10 +213,6 @@ const KNOWN_INVALID_FAILURES = [
     'string / bad-uni-esc-06',
     'string / bad-uni-esc-ml-06',
     'string / basic-byte-escapes',
-    'string / basic-multiline-out-of-range-unicode-escape-01',
-    'string / basic-multiline-out-of-range-unicode-escape-02',
-    'string / basic-out-of-range-unicode-escape-01',
-    'string / basic-out-of-range-unicode-escape-02',
     'string / string / bad-uni-esc-06',
     'string / string / bad-uni-esc-ml-06',
 
