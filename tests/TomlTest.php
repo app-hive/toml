@@ -1489,6 +1489,226 @@ TOML;
     });
 });
 
+describe('inline tables', function () {
+    it('parses simple inline table', function () {
+        expect(Toml::parse('table = { key = "value" }'))->toBe([
+            'table' => ['key' => 'value'],
+        ]);
+    });
+
+    it('parses empty inline table', function () {
+        expect(Toml::parse('empty = {}'))->toBe(['empty' => []]);
+    });
+
+    it('parses inline table with multiple key-value pairs', function () {
+        expect(Toml::parse('point = { x = 1, y = 2 }'))->toBe([
+            'point' => ['x' => 1, 'y' => 2],
+        ]);
+    });
+
+    it('parses inline table with different value types', function () {
+        $toml = 'data = { name = "test", count = 42, enabled = true, ratio = 3.14 }';
+        expect(Toml::parse($toml))->toBe([
+            'data' => [
+                'name' => 'test',
+                'count' => 42,
+                'enabled' => true,
+                'ratio' => 3.14,
+            ],
+        ]);
+    });
+
+    it('parses inline table with quoted keys', function () {
+        expect(Toml::parse('table = { "127.0.0.1" = "localhost" }'))->toBe([
+            'table' => ['127.0.0.1' => 'localhost'],
+        ]);
+    });
+
+    it('parses inline table with dotted keys', function () {
+        expect(Toml::parse('table = { a.b = "value" }'))->toBe([
+            'table' => ['a' => ['b' => 'value']],
+        ]);
+    });
+
+    it('parses inline table with multiple dotted keys', function () {
+        expect(Toml::parse('table = { a.b = 1, a.c = 2 }'))->toBe([
+            'table' => ['a' => ['b' => 1, 'c' => 2]],
+        ]);
+    });
+
+    it('parses nested inline tables', function () {
+        expect(Toml::parse('outer = { inner = { key = "value" } }'))->toBe([
+            'outer' => ['inner' => ['key' => 'value']],
+        ]);
+    });
+
+    it('parses deeply nested inline tables', function () {
+        expect(Toml::parse('a = { b = { c = { d = 42 } } }'))->toBe([
+            'a' => ['b' => ['c' => ['d' => 42]]],
+        ]);
+    });
+
+    it('parses inline table with datetime values', function () {
+        expect(Toml::parse('event = { date = 1979-05-27, time = 07:32:00 }'))->toBe([
+            'event' => [
+                'date' => '1979-05-27',
+                'time' => '07:32:00',
+            ],
+        ]);
+    });
+
+    it('allows trailing comma (TOML 1.1.0)', function () {
+        expect(Toml::parse('table = { key = "value", }'))->toBe([
+            'table' => ['key' => 'value'],
+        ]);
+    });
+
+    it('allows trailing comma with multiple pairs (TOML 1.1.0)', function () {
+        expect(Toml::parse('point = { x = 1, y = 2, }'))->toBe([
+            'point' => ['x' => 1, 'y' => 2],
+        ]);
+    });
+
+    it('allows newlines within inline tables (TOML 1.1.0)', function () {
+        $toml = <<<'TOML'
+point = {
+    x = 1,
+    y = 2
+}
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'point' => ['x' => 1, 'y' => 2],
+        ]);
+    });
+
+    it('allows newlines with trailing comma (TOML 1.1.0)', function () {
+        $toml = <<<'TOML'
+config = {
+    name = "app",
+    version = "1.0",
+}
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'config' => ['name' => 'app', 'version' => '1.0'],
+        ]);
+    });
+
+    it('allows newlines after opening brace (TOML 1.1.0)', function () {
+        $toml = <<<'TOML'
+table = {
+key = "value" }
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'table' => ['key' => 'value'],
+        ]);
+    });
+
+    it('allows newlines before closing brace (TOML 1.1.0)', function () {
+        $toml = <<<'TOML'
+table = { key = "value"
+}
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'table' => ['key' => 'value'],
+        ]);
+    });
+
+    it('parses multiple inline tables in document', function () {
+        $toml = <<<'TOML'
+point1 = { x = 1, y = 2 }
+point2 = { x = 3, y = 4 }
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'point1' => ['x' => 1, 'y' => 2],
+            'point2' => ['x' => 3, 'y' => 4],
+        ]);
+    });
+
+    it('parses inline table inside standard table', function () {
+        $toml = <<<'TOML'
+[section]
+config = { debug = true, level = 3 }
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'section' => [
+                'config' => ['debug' => true, 'level' => 3],
+            ],
+        ]);
+    });
+
+    it('allows whitespace around equals and commas', function () {
+        expect(Toml::parse('t = { a   =   1   ,   b   =   2 }'))->toBe([
+            't' => ['a' => 1, 'b' => 2],
+        ]);
+    });
+
+    it('allows no whitespace around equals and commas', function () {
+        expect(Toml::parse('t={a=1,b=2}'))->toBe([
+            't' => ['a' => 1, 'b' => 2],
+        ]);
+    });
+
+    it('rejects duplicate keys in inline table', function () {
+        Toml::parse('table = { key = 1, key = 2 }');
+    })->throws(TomlParseException::class, "Cannot redefine key 'key'");
+
+    it('rejects redefining dotted key in inline table', function () {
+        Toml::parse('table = { a.b = 1, a.b = 2 }');
+    })->throws(TomlParseException::class, "Cannot redefine key 'b'");
+
+    it('rejects defining key under non-table in inline table', function () {
+        Toml::parse('table = { a = 1, a.b = 2 }');
+    })->throws(TomlParseException::class, 'not a table');
+
+    it('parses inline tables in real-world TOML example', function () {
+        $toml = <<<'TOML'
+# Server configuration
+name = "My Server"
+connection = { host = "localhost", port = 8080 }
+database = { name = "mydb", user = "admin", password = "secret" }
+features = { logging = true, caching = false }
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'name' => 'My Server',
+            'connection' => ['host' => 'localhost', 'port' => 8080],
+            'database' => ['name' => 'mydb', 'user' => 'admin', 'password' => 'secret'],
+            'features' => ['logging' => true, 'caching' => false],
+        ]);
+    });
+
+    it('parses complex nested structure with inline tables', function () {
+        $toml = <<<'TOML'
+[servers]
+alpha = { ip = "10.0.0.1", dc = "eqdc10" }
+beta = { ip = "10.0.0.2", dc = "eqdc10" }
+
+[clients]
+data = { id = 1, name = "client1" }
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'servers' => [
+                'alpha' => ['ip' => '10.0.0.1', 'dc' => 'eqdc10'],
+                'beta' => ['ip' => '10.0.0.2', 'dc' => 'eqdc10'],
+            ],
+            'clients' => [
+                'data' => ['id' => 1, 'name' => 'client1'],
+            ],
+        ]);
+    });
+
+    it('parses inline table with string containing special characters', function () {
+        expect(Toml::parse('table = { msg = "hello, world!" }'))->toBe([
+            'table' => ['msg' => 'hello, world!'],
+        ]);
+    });
+
+    it('parses inline table with literal string value', function () {
+        expect(Toml::parse("table = { path = 'C:\\Users\\admin' }"))->toBe([
+            'table' => ['path' => 'C:\\Users\\admin'],
+        ]);
+    });
+});
+
 describe('Toml::parseFile()', function () {
     it('throws TomlParseException when file does not exist', function () {
         Toml::parseFile('/nonexistent/path/to/file.toml');

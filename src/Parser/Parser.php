@@ -327,7 +327,7 @@ final class Parser
     }
 
     /**
-     * Parse a value (integer, float, string, boolean, etc.).
+     * Parse a value (integer, float, string, boolean, inline table, etc.).
      */
     private function parseValue(): mixed
     {
@@ -345,6 +345,7 @@ final class Parser
             TokenType::LocalDateTime,
             TokenType::LocalDate,
             TokenType::LocalTime => $this->parseDateTime(),
+            TokenType::LeftBrace => $this->parseInlineTable(),
             default => throw new TomlParseException(
                 "Unexpected value type: {$token->type->value}",
                 $token->line,
@@ -543,6 +544,126 @@ final class Parser
         $token = $this->advance();
 
         return $token->value;
+    }
+
+    /**
+     * Parse an inline table: { key = value, ... }
+     * TOML 1.1.0 allows trailing commas and newlines within inline tables.
+     * Inline tables are fully defined inline and cannot be extended.
+     *
+     * @return array<string, mixed>
+     */
+    private function parseInlineTable(): array
+    {
+        $startToken = $this->advance(); // consume '{'
+        $result = [];
+
+        // Skip any whitespace and newlines after opening brace (TOML 1.1.0)
+        $this->skipInlineTableWhitespace();
+
+        // Check for empty inline table
+        if ($this->check(TokenType::RightBrace)) {
+            $this->advance();
+
+            return $result;
+        }
+
+        // Parse key-value pairs
+        while (true) {
+            // Parse key (may be dotted)
+            $keyParts = $this->parseDottedKey();
+
+            $this->expect(TokenType::Equals);
+
+            $value = $this->parseValue();
+
+            // Set the value in the result, handling dotted keys
+            $this->setInlineTableValue($result, $keyParts, $value, $startToken);
+
+            // Skip whitespace and newlines after value (TOML 1.1.0)
+            $this->skipInlineTableWhitespace();
+
+            // Check for comma or closing brace
+            if ($this->check(TokenType::Comma)) {
+                $this->advance(); // consume comma
+                // Skip whitespace and newlines after comma (TOML 1.1.0)
+                $this->skipInlineTableWhitespace();
+
+                // Allow trailing comma (TOML 1.1.0)
+                if ($this->check(TokenType::RightBrace)) {
+                    $this->advance();
+
+                    return $result;
+                }
+            } elseif ($this->check(TokenType::RightBrace)) {
+                $this->advance();
+
+                return $result;
+            } else {
+                $token = $this->peek();
+                throw new TomlParseException(
+                    "Expected ',' or '}' in inline table, got {$token->type->value}",
+                    $token->line,
+                    $token->column,
+                    $this->source
+                );
+            }
+        }
+    }
+
+    /**
+     * Skip whitespace and newlines within inline tables (TOML 1.1.0 feature).
+     */
+    private function skipInlineTableWhitespace(): void
+    {
+        while (! $this->isAtEnd() && $this->check(TokenType::Newline)) {
+            $this->advance();
+        }
+    }
+
+    /**
+     * Set a value in an inline table, handling dotted keys.
+     *
+     * @param  array<string, mixed>  $array
+     * @param  list<string>  $keyParts
+     *
+     * @throws TomlParseException
+     */
+    private function setInlineTableValue(array &$array, array $keyParts, mixed $value, Token $startToken): void
+    {
+        $current = &$array;
+
+        // Navigate/create intermediate tables
+        for ($i = 0; $i < count($keyParts) - 1; $i++) {
+            $key = $keyParts[$i];
+
+            if (! isset($current[$key])) {
+                $current[$key] = [];
+            } elseif (! is_array($current[$key])) {
+                throw new TomlParseException(
+                    "Cannot define key '{$keyParts[$i + 1]}' because '{$key}' is not a table",
+                    $startToken->line,
+                    $startToken->column,
+                    $this->source
+                );
+            }
+
+            $current = &$current[$key];
+        }
+
+        // Set the final value
+        $finalKey = $keyParts[count($keyParts) - 1];
+
+        if (isset($current[$finalKey])) {
+            throw new TomlParseException(
+                "Cannot redefine key '{$finalKey}' in inline table",
+                $startToken->line,
+                $startToken->column,
+                $this->source
+            );
+        }
+
+        $current[$finalKey] = $value;
     }
 
     /**
