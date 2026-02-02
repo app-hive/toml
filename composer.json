@@ -1,0 +1,23 @@
+{
+    "name": "app-hive/toml",
+    "description": "Toml parser for PHP",
+    "autoload": {
+        "psr-4": {
+            "AppHive\\Toml\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Philo Hermans",
+            "email": "me@philohermans.com"
+        }
+    ],
+    "require-dev": {
+        "pestphp/pest": "^4.3"
+    },
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    }
+}
