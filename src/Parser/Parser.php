@@ -18,6 +18,11 @@ final class Parser
 
     private string $source;
 
+    private ParserConfig $config;
+
+    /** @var list<ParserWarning> */
+    private array $warnings = [];
+
     /**
      * Current table path for key assignments.
      *
@@ -50,9 +55,16 @@ final class Parser
      */
     private array $arrayOfTablesPaths = [];
 
-    public function __construct(string $source)
+    /**
+     * Create a new parser instance.
+     *
+     * @param  string  $source  The TOML source to parse
+     * @param  ParserConfig|null  $config  Parser configuration. Defaults to strict mode.
+     */
+    public function __construct(string $source, ?ParserConfig $config = null)
     {
         $this->source = $source;
+        $this->config = $config ?? new ParserConfig;
         $lexer = new Lexer($source);
         $this->tokens = $lexer->tokenize();
     }
@@ -100,6 +112,81 @@ final class Parser
         }
 
         return $result;
+    }
+
+    /**
+     * Get warnings collected during lenient parsing.
+     *
+     * In lenient mode, spec violations are collected as warnings instead of
+     * throwing exceptions. Call this method after parse() to retrieve them.
+     *
+     * In strict mode (default), this always returns an empty array since
+     * any violation throws an exception.
+     *
+     * @return list<ParserWarning>
+     */
+    public function getWarnings(): array
+    {
+        return $this->warnings;
+    }
+
+    /**
+     * Report a spec violation - throws in strict mode, collects warning in lenient mode.
+     *
+     * @return bool True if parsing should continue (lenient mode), false otherwise.
+     *              In strict mode, this method always throws.
+     *
+     * @throws TomlParseException In strict mode
+     */
+    private function reportViolation(string $message, int $line, int $column): bool
+    {
+        if ($this->config->strict) {
+            throw new TomlParseException($message, $line, $column, $this->source);
+        }
+
+        $snippet = $this->buildSnippet($line, $column);
+        $this->warnings[] = new ParserWarning($message, $line, $column, $snippet);
+
+        return true;
+    }
+
+    /**
+     * Build a source code snippet for error context.
+     */
+    private function buildSnippet(int $line, int $column): string
+    {
+        if ($this->source === '' || $line === 0) {
+            return '';
+        }
+
+        $lines = explode("\n", $this->source);
+        $totalLines = count($lines);
+
+        if ($line > $totalLines) {
+            return '';
+        }
+
+        $snippetLines = [];
+        $contextLines = 2;
+
+        $startLine = max(1, $line - $contextLines);
+        $endLine = min($totalLines, $line + $contextLines);
+
+        $lineNumberWidth = strlen((string) $endLine);
+
+        for ($i = $startLine; $i <= $endLine; $i++) {
+            $lineContent = $lines[$i - 1];
+            $lineNumber = str_pad((string) $i, $lineNumberWidth, ' ', STR_PAD_LEFT);
+            $prefix = $i === $line ? '> ' : '  ';
+            $snippetLines[] = sprintf('%s%s | %s', $prefix, $lineNumber, $lineContent);
+
+            if ($i === $line && $column > 0) {
+                $pointerPadding = str_repeat(' ', strlen($prefix) + $lineNumberWidth + 3 + $column - 1);
+                $snippetLines[] = $pointerPadding.'^';
+            }
+        }
+
+        return implode("\n", $snippetLines);
     }
 
     /**
@@ -190,22 +277,26 @@ final class Parser
 
         // Check if this path was already defined as a regular table
         if (isset($this->definedTables[$tablePath]) && ! isset($this->arrayOfTablesPaths[$tablePath])) {
-            throw new TomlParseException(
+            $this->reportViolation(
                 "Cannot define array of tables '{$tablePath}' because it was already defined as a table",
                 $startToken->line,
-                $startToken->column,
-                $this->source
+                $startToken->column
             );
+
+            // In lenient mode, skip this array of tables header
+            return;
         }
 
         // Check if this path was created by dotted keys (cannot redefine)
         if (isset($this->implicitDottedKeyTables[$tablePath])) {
-            throw new TomlParseException(
+            $this->reportViolation(
                 "Cannot redefine '{$tablePath}' that was implicitly defined by dotted keys",
                 $startToken->line,
-                $startToken->column,
-                $this->source
+                $startToken->column
             );
+
+            // In lenient mode, skip this array of tables header
+            return;
         }
 
         // Mark this path as an array of tables
@@ -327,32 +418,34 @@ final class Parser
 
         // Check if this path was already defined as an array of tables
         if (isset($this->arrayOfTablesPaths[$tablePath])) {
-            throw new TomlParseException(
+            $this->reportViolation(
                 "Cannot define table '{$tablePath}' because it was already defined as an array of tables",
                 $startToken->line,
-                $startToken->column,
-                $this->source
+                $startToken->column
             );
+
+            // In lenient mode, skip this table header
+            return;
         }
 
         // Check if this table was already explicitly defined
         if (isset($this->definedTables[$tablePath])) {
-            throw new TomlParseException(
+            $this->reportViolation(
                 "Table '{$tablePath}' already defined",
                 $startToken->line,
-                $startToken->column,
-                $this->source
+                $startToken->column
             );
+            // In lenient mode, continue adding to the same table
         }
 
         // Check if this path was created by dotted keys (cannot redefine)
         if (isset($this->implicitDottedKeyTables[$tablePath])) {
-            throw new TomlParseException(
+            $this->reportViolation(
                 "Cannot redefine table '{$tablePath}' that was implicitly defined by dotted keys",
                 $startToken->line,
-                $startToken->column,
-                $this->source
+                $startToken->column
             );
+            // In lenient mode, continue adding to the same table
         }
 
         // Mark this table as explicitly defined
@@ -584,12 +677,14 @@ final class Parser
 
         if (isset($current[$finalKey])) {
             $token = $this->peek();
-            throw new TomlParseException(
+            $this->reportViolation(
                 "Cannot redefine key '{$finalKey}'",
                 $token->line,
-                $token->column,
-                $this->source
+                $token->column
             );
+
+            // In lenient mode, we skip this assignment (keep original value)
+            return;
         }
 
         $current[$finalKey] = $value;
@@ -674,12 +769,12 @@ final class Parser
 
         // Check for leading zeros: length > 1 and starts with 0
         if (strlen($unsigned) > 1 && $unsigned[0] === '0') {
-            throw new TomlParseException(
+            $this->reportViolation(
                 'Leading zeros are not allowed in decimal integers',
                 $token->line,
-                $token->column,
-                $this->source
+                $token->column
             );
+            // In lenient mode, continue parsing the value anyway
         }
     }
 
@@ -1089,12 +1184,14 @@ final class Parser
         $finalKey = $keyParts[count($keyParts) - 1];
 
         if (isset($current[$finalKey])) {
-            throw new TomlParseException(
+            $this->reportViolation(
                 "Cannot redefine key '{$finalKey}' in inline table",
                 $startToken->line,
-                $startToken->column,
-                $this->source
+                $startToken->column
             );
+
+            // In lenient mode, skip this assignment (keep original value)
+            return;
         }
 
         $current[$finalKey] = $value;
@@ -1155,12 +1252,12 @@ final class Parser
 
         // Check for leading zeros: length > 1 and starts with 0
         if (strlen($integerPart) > 1 && $integerPart[0] === '0') {
-            throw new TomlParseException(
+            $this->reportViolation(
                 'Leading zeros are not allowed in floats',
                 $token->line,
-                $token->column,
-                $this->source
+                $token->column
             );
+            // In lenient mode, continue parsing the value anyway
         }
     }
 
