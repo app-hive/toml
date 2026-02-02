@@ -500,11 +500,18 @@ final class Lexer
         }
 
         // Check for inf/nan without sign
+        // Make sure it's not part of a longer identifier (e.g., "infinity" or "nan_value")
         if ($this->peek() === 'i' && $this->lookAhead(1) === 'n' && $this->lookAhead(2) === 'f') {
-            return $this->scanInfNan($line, $column);
+            $afterInf = $this->lookAhead(3);
+            if ($afterInf === null || ! $this->isBareKeyChar($afterInf)) {
+                return $this->scanInfNan($line, $column);
+            }
         }
         if ($this->peek() === 'n' && $this->lookAhead(1) === 'a' && $this->lookAhead(2) === 'n') {
-            return $this->scanInfNan($line, $column);
+            $afterNan = $this->lookAhead(3);
+            if ($afterNan === null || ! $this->isBareKeyChar($afterNan)) {
+                return $this->scanInfNan($line, $column);
+            }
         }
 
         // Check for boolean

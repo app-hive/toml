@@ -42,9 +42,6 @@ const KNOWN_VALID_FAILURES = [
     'string / multiline-empty',
     'string / multiline-escaped-crlf',
 
-    // Float special values handling
-    'float / inf-and-nan',
-
     // Table/array handling edge cases
     'array / array-subtables',
     'table / array-table-array',
