@@ -138,6 +138,7 @@ final class Lexer
 
         while (! $this->isAtEnd()) {
             $char = $this->peek();
+            assert($char !== null);
 
             if ($char === '"') {
                 $this->advance();
@@ -157,6 +158,7 @@ final class Lexer
             if ($char === '\\') {
                 $value .= $this->scanEscapeSequence();
             } else {
+                $this->validateControlCharacter($char);
                 $value .= $this->advance();
             }
         }
@@ -167,6 +169,20 @@ final class Lexer
             $column,
             $this->source
         );
+    }
+
+    private function validateControlCharacter(string $char): void
+    {
+        $ord = ord($char);
+        // Control characters U+0000 to U+001F are not allowed, except tab (U+0009)
+        if ($ord <= 0x1F && $ord !== 0x09) {
+            throw new TomlParseException(
+                sprintf('Control character U+%04X is not allowed in basic strings', $ord),
+                $this->line,
+                $this->column,
+                $this->source
+            );
+        }
     }
 
     private function scanMultilineBasicString(int $line, int $column): Token
@@ -192,6 +208,7 @@ final class Lexer
 
         while (! $this->isAtEnd()) {
             $char = $this->peek();
+            assert($char !== null);
 
             if ($char === '"' && $this->lookAhead(1) === '"' && $this->lookAhead(2) === '"') {
                 $this->advance();
@@ -229,6 +246,7 @@ final class Lexer
                 $this->line++;
                 $this->column = 1;
             } else {
+                $this->validateControlCharacter($char);
                 $value .= $this->advance();
             }
         }
@@ -280,6 +298,8 @@ final class Lexer
             '\\' => '\\',
             'u' => $this->scanUnicodeEscape(4),
             'U' => $this->scanUnicodeEscape(8),
+            'e' => "\x1B", // TOML 1.1.0: escape character
+            'x' => $this->scanHexEscape(), // TOML 1.1.0: \xNN
             default => throw new TomlParseException(
                 "Invalid escape sequence: \\{$char}",
                 $this->line,
@@ -287,6 +307,33 @@ final class Lexer
                 $this->source
             ),
         };
+    }
+
+    private function scanHexEscape(): string
+    {
+        $hex = '';
+        for ($i = 0; $i < 2; $i++) {
+            if ($this->isAtEnd()) {
+                throw new TomlParseException(
+                    'Incomplete hex escape sequence',
+                    $this->line,
+                    $this->column,
+                    $this->source
+                );
+            }
+            $char = $this->peek();
+            if (! ctype_xdigit($char)) {
+                throw new TomlParseException(
+                    "Invalid hex escape character: {$char}",
+                    $this->line,
+                    $this->column,
+                    $this->source
+                );
+            }
+            $hex .= $this->advance();
+        }
+
+        return chr((int) hexdec($hex));
     }
 
     private function scanUnicodeEscape(int $length): string

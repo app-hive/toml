@@ -116,39 +116,240 @@ describe('Lexer', function () {
             expect($tokens[0]->value)->toBe('');
         });
 
-        it('handles escape sequences', function () {
-            $lexer = new Lexer('"line1\\nline2\\ttab"');
-            $tokens = $lexer->tokenize();
+        describe('standard escape sequences', function () {
+            it('handles backspace escape \\b', function () {
+                $lexer = new Lexer('"hello\\bworld"');
+                $tokens = $lexer->tokenize();
 
-            expect($tokens[0]->value)->toBe("line1\nline2\ttab");
+                expect($tokens[0]->value)->toBe("hello\x08world");
+            });
+
+            it('handles tab escape \\t', function () {
+                $lexer = new Lexer('"hello\\tworld"');
+                $tokens = $lexer->tokenize();
+
+                expect($tokens[0]->value)->toBe("hello\tworld");
+            });
+
+            it('handles newline escape \\n', function () {
+                $lexer = new Lexer('"line1\\nline2"');
+                $tokens = $lexer->tokenize();
+
+                expect($tokens[0]->value)->toBe("line1\nline2");
+            });
+
+            it('handles form feed escape \\f', function () {
+                $lexer = new Lexer('"hello\\fworld"');
+                $tokens = $lexer->tokenize();
+
+                expect($tokens[0]->value)->toBe("hello\x0Cworld");
+            });
+
+            it('handles carriage return escape \\r', function () {
+                $lexer = new Lexer('"hello\\rworld"');
+                $tokens = $lexer->tokenize();
+
+                expect($tokens[0]->value)->toBe("hello\rworld");
+            });
+
+            it('handles quote escape \\"', function () {
+                $lexer = new Lexer('"say \\"hello\\""');
+                $tokens = $lexer->tokenize();
+
+                expect($tokens[0]->value)->toBe('say "hello"');
+            });
+
+            it('handles backslash escape \\\\', function () {
+                $lexer = new Lexer('"path\\\\to\\\\file"');
+                $tokens = $lexer->tokenize();
+
+                expect($tokens[0]->value)->toBe('path\\to\\file');
+            });
+
+            it('handles multiple escape sequences in one string', function () {
+                $lexer = new Lexer('"\\b\\t\\n\\f\\r\\"\\\\"');
+                $tokens = $lexer->tokenize();
+
+                expect($tokens[0]->value)->toBe("\x08\t\n\x0C\r\"\\");
+            });
         });
 
-        it('handles backslash escape', function () {
-            $lexer = new Lexer('"path\\\\to\\\\file"');
-            $tokens = $lexer->tokenize();
+        describe('unicode escape sequences', function () {
+            it('handles 4-digit unicode escape \\uXXXX', function () {
+                $lexer = new Lexer('"\\u0041\\u0042\\u0043"');
+                $tokens = $lexer->tokenize();
 
-            expect($tokens[0]->value)->toBe('path\\to\\file');
+                expect($tokens[0]->value)->toBe('ABC');
+            });
+
+            it('handles 8-digit unicode escape \\UXXXXXXXX', function () {
+                $lexer = new Lexer('"\\U0001F600"');
+                $tokens = $lexer->tokenize();
+
+                expect($tokens[0]->value)->toBe('😀');
+            });
+
+            it('handles unicode escape for special characters', function () {
+                $lexer = new Lexer('"\\u00A9"'); // copyright symbol
+                $tokens = $lexer->tokenize();
+
+                expect($tokens[0]->value)->toBe('©');
+            });
+
+            it('handles unicode escape in the middle of a string', function () {
+                $lexer = new Lexer('"hello \\u0041 world"');
+                $tokens = $lexer->tokenize();
+
+                expect($tokens[0]->value)->toBe('hello A world');
+            });
+
+            it('throws on incomplete 4-digit unicode escape', function () {
+                $lexer = new Lexer('"\\u041"');
+                $lexer->tokenize();
+            })->throws(TomlParseException::class);
+
+            it('throws on incomplete 8-digit unicode escape', function () {
+                $lexer = new Lexer('"\\U0001F60"');
+                $lexer->tokenize();
+            })->throws(TomlParseException::class);
+
+            it('throws on invalid unicode escape character', function () {
+                $lexer = new Lexer('"\\u00GG"');
+                $lexer->tokenize();
+            })->throws(TomlParseException::class, 'Invalid unicode escape character');
         });
 
-        it('handles quote escape', function () {
-            $lexer = new Lexer('"say \\"hello\\""');
-            $tokens = $lexer->tokenize();
+        describe('TOML 1.1.0 escape sequences', function () {
+            it('handles escape character \\e', function () {
+                $lexer = new Lexer('"\\e[31mred\\e[0m"');
+                $tokens = $lexer->tokenize();
 
-            expect($tokens[0]->value)->toBe('say "hello"');
+                expect($tokens[0]->value)->toBe("\x1B[31mred\x1B[0m");
+            });
+
+            it('handles hex escape \\xNN', function () {
+                $lexer = new Lexer('"\\x41\\x42\\x43"');
+                $tokens = $lexer->tokenize();
+
+                expect($tokens[0]->value)->toBe('ABC');
+            });
+
+            it('handles hex escape with lowercase', function () {
+                $lexer = new Lexer('"\\x7f"');
+                $tokens = $lexer->tokenize();
+
+                expect($tokens[0]->value)->toBe("\x7F");
+            });
+
+            it('handles hex escape for null byte', function () {
+                $lexer = new Lexer('"hello\\x00world"');
+                $tokens = $lexer->tokenize();
+
+                expect($tokens[0]->value)->toBe("hello\x00world");
+            });
+
+            it('throws on incomplete hex escape', function () {
+                $lexer = new Lexer('"\\x4"');
+                $lexer->tokenize();
+            })->throws(TomlParseException::class);
+
+            it('throws on invalid hex escape character', function () {
+                $lexer = new Lexer('"\\xGG"');
+                $lexer->tokenize();
+            })->throws(TomlParseException::class);
         });
 
-        it('handles 4-digit unicode escape', function () {
-            $lexer = new Lexer('"\\u0041\\u0042\\u0043"');
-            $tokens = $lexer->tokenize();
+        describe('invalid escape sequences', function () {
+            it('throws on invalid escape sequence \\a', function () {
+                $lexer = new Lexer('"\\a"');
+                $lexer->tokenize();
+            })->throws(TomlParseException::class, 'Invalid escape sequence: \\a');
 
-            expect($tokens[0]->value)->toBe('ABC');
+            it('throws on invalid escape sequence \\v', function () {
+                $lexer = new Lexer('"\\v"');
+                $lexer->tokenize();
+            })->throws(TomlParseException::class, 'Invalid escape sequence: \\v');
+
+            it('throws on invalid escape sequence \\z', function () {
+                $lexer = new Lexer('"\\z"');
+                $lexer->tokenize();
+            })->throws(TomlParseException::class, 'Invalid escape sequence: \\z');
+
+            it('throws on invalid escape sequence \\0 (not valid in TOML)', function () {
+                $lexer = new Lexer('"\\0"');
+                $lexer->tokenize();
+            })->throws(TomlParseException::class, 'Invalid escape sequence: \\0');
+
+            it('provides line and column for invalid escape sequence', function () {
+                $lexer = new Lexer("key = \"test\\qvalue\"");
+
+                try {
+                    $lexer->tokenize();
+                    expect(false)->toBeTrue(); // Should not reach here
+                } catch (TomlParseException $e) {
+                    expect($e->getErrorLine())->toBe(1);
+                    expect($e->getMessage())->toContain('Invalid escape sequence: \\q');
+                }
+            });
         });
 
-        it('handles 8-digit unicode escape', function () {
-            $lexer = new Lexer('"\\U0001F600"');
-            $tokens = $lexer->tokenize();
+        describe('control characters', function () {
+            it('allows tab character in basic string', function () {
+                $lexer = new Lexer("\"hello\tworld\"");
+                $tokens = $lexer->tokenize();
 
-            expect($tokens[0]->value)->toBe('😀');
+                expect($tokens[0]->value)->toBe("hello\tworld");
+            });
+
+            it('rejects null character (U+0000)', function () {
+                $lexer = new Lexer("\"hello\x00world\"");
+                $lexer->tokenize();
+            })->throws(TomlParseException::class, 'Control character');
+
+            it('rejects bell character (U+0007)', function () {
+                $lexer = new Lexer("\"hello\x07world\"");
+                $lexer->tokenize();
+            })->throws(TomlParseException::class, 'Control character');
+
+            it('rejects backspace character (U+0008)', function () {
+                $lexer = new Lexer("\"hello\x08world\"");
+                $lexer->tokenize();
+            })->throws(TomlParseException::class, 'Control character');
+
+            it('rejects form feed character (U+000C)', function () {
+                $lexer = new Lexer("\"hello\x0Cworld\"");
+                $lexer->tokenize();
+            })->throws(TomlParseException::class, 'Control character');
+
+            it('rejects escape character (U+001B)', function () {
+                $lexer = new Lexer("\"hello\x1Bworld\"");
+                $lexer->tokenize();
+            })->throws(TomlParseException::class, 'Control character');
+
+            it('rejects unit separator character (U+001F)', function () {
+                $lexer = new Lexer("\"hello\x1Fworld\"");
+                $lexer->tokenize();
+            })->throws(TomlParseException::class, 'Control character');
+
+            it('allows DEL character (U+007F)', function () {
+                // DEL (U+007F) is not in the U+0000-U+001F range, so it's allowed
+                $lexer = new Lexer("\"hello\x7Fworld\"");
+                $tokens = $lexer->tokenize();
+
+                expect($tokens[0]->value)->toBe("hello\x7Fworld");
+            });
+
+            it('provides line and column for control character error', function () {
+                $lexer = new Lexer("\"hello\x00world\"");
+
+                try {
+                    $lexer->tokenize();
+                    expect(false)->toBeTrue(); // Should not reach here
+                } catch (TomlParseException $e) {
+                    expect($e->getErrorLine())->toBe(1);
+                    expect($e->getMessage())->toContain('Control character');
+                }
+            });
         });
 
         it('throws on unterminated string', function () {
@@ -160,11 +361,6 @@ describe('Lexer', function () {
             $lexer = new Lexer("\"line1\nline2\"");
             $lexer->tokenize();
         })->throws(TomlParseException::class, 'Unterminated basic string');
-
-        it('throws on invalid escape sequence', function () {
-            $lexer = new Lexer('"invalid\\x"');
-            $lexer->tokenize();
-        })->throws(TomlParseException::class, 'Invalid escape sequence');
     });
 
     describe('multiline basic strings', function () {
