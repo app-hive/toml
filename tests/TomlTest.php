@@ -134,6 +134,121 @@ TOML;
             ]);
         });
     });
+
+    describe('floats', function () {
+        it('parses simple decimal floats', function () {
+            expect(Toml::parse('pi = 3.14'))->toBe(['pi' => 3.14]);
+        });
+
+        it('parses positive signed floats', function () {
+            expect(Toml::parse('positive = +1.0'))->toBe(['positive' => 1.0]);
+        });
+
+        it('parses negative floats', function () {
+            expect(Toml::parse('negative = -0.01'))->toBe(['negative' => -0.01]);
+        });
+
+        it('parses zero point zero', function () {
+            expect(Toml::parse('zero = 0.0'))->toBe(['zero' => 0.0]);
+        });
+
+        it('parses floats with exponent', function () {
+            expect(Toml::parse('big = 5e+22'))->toBe(['big' => 5e+22]);
+        });
+
+        it('parses floats with exponent without sign', function () {
+            expect(Toml::parse('num = 1e06'))->toBe(['num' => 1e06]);
+        });
+
+        it('parses negative floats with negative exponent', function () {
+            expect(Toml::parse('small = -2E-2'))->toBe(['small' => -2E-2]);
+        });
+
+        it('parses floats with both decimal and exponent', function () {
+            expect(Toml::parse('planck = 6.626e-34'))->toBe(['planck' => 6.626e-34]);
+        });
+
+        it('parses floats with underscores', function () {
+            expect(Toml::parse('big = 9_224_617.445_991_228_313'))->toBe(['big' => 9224617.445991228313]);
+        });
+
+        it('parses positive infinity', function () {
+            $result = Toml::parse('value = inf');
+            expect($result['value'])->toBe(INF);
+        });
+
+        it('parses explicit positive infinity', function () {
+            $result = Toml::parse('value = +inf');
+            expect($result['value'])->toBe(INF);
+        });
+
+        it('parses negative infinity', function () {
+            $result = Toml::parse('value = -inf');
+            expect($result['value'])->toBe(-INF);
+        });
+
+        it('parses nan', function () {
+            $result = Toml::parse('value = nan');
+            expect(is_nan($result['value']))->toBeTrue();
+        });
+
+        it('parses positive nan', function () {
+            $result = Toml::parse('value = +nan');
+            expect(is_nan($result['value']))->toBeTrue();
+        });
+
+        it('parses negative nan', function () {
+            $result = Toml::parse('value = -nan');
+            expect(is_nan($result['value']))->toBeTrue();
+        });
+
+        it('rejects leading zeros in floats', function () {
+            Toml::parse('invalid = 03.14');
+        })->throws(TomlParseException::class, 'Leading zeros are not allowed');
+
+        it('rejects leading zeros with sign in floats', function () {
+            Toml::parse('invalid = +03.14');
+        })->throws(TomlParseException::class, 'Leading zeros are not allowed');
+
+        it('allows 0.x format', function () {
+            expect(Toml::parse('zero = 0.5'))->toBe(['zero' => 0.5]);
+        });
+
+        it('parses multiple float key-value pairs', function () {
+            $toml = <<<'TOML'
+a = 1.0
+b = 2.5
+c = -3.14
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'a' => 1.0,
+                'b' => 2.5,
+                'c' => -3.14,
+            ]);
+        });
+
+        it('parses floats in real-world TOML example', function () {
+            $toml = <<<'TOML'
+pi = 3.14159
+gravity = 9.8
+avogadro = 6.022e23
+electron_mass = 9.109e-31
+threshold = +1.0
+offset = -0.5
+max = inf
+invalid_reading = nan
+TOML;
+            $result = Toml::parse($toml);
+            expect($result['pi'])->toBe(3.14159);
+            expect($result['gravity'])->toBe(9.8);
+            expect($result['avogadro'])->toBe(6.022e23);
+            expect($result['electron_mass'])->toBe(9.109e-31);
+            expect($result['threshold'])->toBe(1.0);
+            expect($result['offset'])->toBe(-0.5);
+            expect($result['max'])->toBe(INF);
+            expect(is_nan($result['invalid_reading']))->toBeTrue();
+        });
+    });
 });
 
 describe('Toml::parseFile()', function () {

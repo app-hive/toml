@@ -123,6 +123,7 @@ final class Parser
 
         return match ($token->type) {
             TokenType::Integer => $this->parseInteger(),
+            TokenType::Float => $this->parseFloat(),
             TokenType::BasicString,
             TokenType::LiteralString,
             TokenType::MultilineBasicString,
@@ -304,6 +305,70 @@ final class Parser
         $token = $this->advance();
 
         return $token->value;
+    }
+
+    /**
+     * Parse a float value.
+     * Handles decimal floats, exponent notation, and special values (inf, nan).
+     */
+    private function parseFloat(): float
+    {
+        $token = $this->advance();
+        $value = $token->value;
+
+        // Validate no leading zeros (same rule as integers, but for the integer part of floats)
+        $this->validateFloatNoLeadingZeros($value, $token);
+
+        // Handle special values
+        if ($value === 'inf' || $value === '+inf') {
+            return INF;
+        }
+        if ($value === '-inf') {
+            return -INF;
+        }
+        if ($value === 'nan' || $value === '+nan' || $value === '-nan') {
+            return NAN;
+        }
+
+        return (float) $value;
+    }
+
+    /**
+     * Validate that the integer part of a float doesn't have leading zeros.
+     */
+    private function validateFloatNoLeadingZeros(string $value, Token $token): void
+    {
+        // Skip special values
+        if (in_array($value, ['inf', '+inf', '-inf', 'nan', '+nan', '-nan'], true)) {
+            return;
+        }
+
+        // Remove sign if present
+        $unsigned = $value;
+        if (str_starts_with($value, '+') || str_starts_with($value, '-')) {
+            $unsigned = substr($value, 1);
+        }
+
+        // Extract the integer part (before decimal point or exponent)
+        $integerPart = $unsigned;
+        $dotPos = strpos($unsigned, '.');
+        $ePos = stripos($unsigned, 'e');
+
+        if ($dotPos !== false) {
+            $integerPart = substr($unsigned, 0, $dotPos);
+        } elseif ($ePos !== false) {
+            $integerPart = substr($unsigned, 0, $ePos);
+        }
+
+        // Check for leading zeros: length > 1 and starts with 0
+        if (strlen($integerPart) > 1 && $integerPart[0] === '0') {
+            throw new TomlParseException(
+                'Leading zeros are not allowed in floats',
+                $token->line,
+                $token->column,
+                $this->source
+            );
+        }
     }
 
     /**
