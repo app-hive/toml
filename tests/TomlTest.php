@@ -536,6 +536,151 @@ TOML;
             expect(Toml::parse($toml))->toBe(['str' => 'helloAworld']);
         });
     });
+
+    describe('multi-line literal strings', function () {
+        it('parses simple multi-line literal string with triple single quotes', function () {
+            $toml = "str = '''hello world'''";
+            expect(Toml::parse($toml))->toBe(['str' => 'hello world']);
+        });
+
+        it('trims newline immediately following opening delimiter', function () {
+            $toml = <<<'TOML'
+str = '''
+hello world'''
+TOML;
+            expect(Toml::parse($toml))->toBe(['str' => 'hello world']);
+        });
+
+        it('preserves content when no newline after opening delimiter', function () {
+            $toml = "str = '''hello world'''";
+            expect(Toml::parse($toml))->toBe(['str' => 'hello world']);
+        });
+
+        it('preserves newlines within the string content', function () {
+            $toml = <<<'TOML'
+str = '''
+line 1
+line 2
+line 3'''
+TOML;
+            expect(Toml::parse($toml))->toBe(['str' => "line 1\nline 2\nline 3"]);
+        });
+
+        it('does NOT process escape sequences - backslash n remains literal', function () {
+            $toml = "str = '''hello\\nworld'''";
+            expect(Toml::parse($toml))->toBe(['str' => 'hello\\nworld']);
+        });
+
+        it('does NOT process escape sequences - backslash t remains literal', function () {
+            $toml = "str = '''hello\\tworld'''";
+            expect(Toml::parse($toml))->toBe(['str' => 'hello\\tworld']);
+        });
+
+        it('does NOT process escape sequences - backslash r remains literal', function () {
+            $toml = "str = '''hello\\rworld'''";
+            expect(Toml::parse($toml))->toBe(['str' => 'hello\\rworld']);
+        });
+
+        it('does NOT process escape sequences - double backslash remains literal', function () {
+            $toml = "str = '''hello\\\\world'''";
+            expect(Toml::parse($toml))->toBe(['str' => 'hello\\\\world']);
+        });
+
+        it('does NOT process unicode escape sequences', function () {
+            $toml = "str = '''hello\\u0041world'''";
+            expect(Toml::parse($toml))->toBe(['str' => 'hello\\u0041world']);
+        });
+
+        it('preserves Windows-style paths without escape processing', function () {
+            $toml = "str = '''C:\\Users\\admin\\Documents'''";
+            expect(Toml::parse($toml))->toBe(['str' => 'C:\\Users\\admin\\Documents']);
+        });
+
+        it('preserves regex patterns without escape processing', function () {
+            $toml = "str = '''<\\i\\c*\\s*>'''";
+            expect(Toml::parse($toml))->toBe(['str' => '<\\i\\c*\\s*>']);
+        });
+
+        it('allows single quotes within the content', function () {
+            $toml = "str = '''I'm a string with 'quotes' inside'''";
+            expect(Toml::parse($toml))->toBe(['str' => "I'm a string with 'quotes' inside"]);
+        });
+
+        it('allows two consecutive single quotes within the content', function () {
+            $toml = "str = '''Here are two quotes: ''. Simple.'''";
+            expect(Toml::parse($toml))->toBe(['str' => "Here are two quotes: ''. Simple."]);
+        });
+
+        it('allows up to two quotes at the end before closing delimiter', function () {
+            $toml = "str = '''hello'''''";
+            expect(Toml::parse($toml))->toBe(['str' => "hello''"]);
+        });
+
+        it('allows one quote at the end before closing delimiter', function () {
+            $toml = "str = '''hello''''";
+            expect(Toml::parse($toml))->toBe(['str' => "hello'"]);
+        });
+
+        it('trims CRLF immediately following opening delimiter', function () {
+            $toml = "str = '''\r\nhello world'''";
+            expect(Toml::parse($toml))->toBe(['str' => 'hello world']);
+        });
+
+        it('normalizes CRLF to LF within content', function () {
+            $toml = "str = '''\r\nline 1\r\nline 2'''";
+            expect(Toml::parse($toml))->toBe(['str' => "line 1\nline 2"]);
+        });
+
+        it('handles empty multi-line literal string', function () {
+            $toml = "str = ''''''";
+            expect(Toml::parse($toml))->toBe(['str' => '']);
+        });
+
+        it('handles multi-line string with only whitespace', function () {
+            $toml = "str = '''   '''";
+            expect(Toml::parse($toml))->toBe(['str' => '   ']);
+        });
+
+        it('does NOT support line-ending backslash (preserved literally)', function () {
+            // Unlike basic strings, literal strings don't process line-ending backslash
+            $toml = "str = '''hello \\\nworld'''";
+            expect(Toml::parse($toml))->toBe(['str' => "hello \\\nworld"]);
+        });
+
+        it('parses multi-line literal strings in real-world TOML example', function () {
+            $toml = <<<'TOML'
+regex = '''I [dw]on't need \d{2} apples'''
+
+winpath = '''C:\Users\nodejs\templates'''
+
+winpath2 = '''\\ServerX\admin$\system32\'''
+
+quoted = '''Tom "Dubs" Preston-Werner'''
+TOML;
+            $result = Toml::parse($toml);
+            expect($result['regex'])->toBe('I [dw]on\'t need \\d{2} apples');
+            expect($result['winpath'])->toBe('C:\\Users\\nodejs\\templates');
+            expect($result['winpath2'])->toBe('\\\\ServerX\\admin$\\system32\\');
+            expect($result['quoted'])->toBe('Tom "Dubs" Preston-Werner');
+        });
+
+        it('handles multi-line literal string with embedded double quotes', function () {
+            $toml = "str = '''He said \"Hello World\"'''";
+            expect(Toml::parse($toml))->toBe(['str' => 'He said "Hello World"']);
+        });
+
+        it('handles multi-line content across many lines', function () {
+            $toml = <<<'TOML'
+str = '''
+The first newline is
+trimmed in raw strings.
+   All other whitespace
+   is preserved.
+'''
+TOML;
+            expect(Toml::parse($toml))->toBe(['str' => "The first newline is\ntrimmed in raw strings.\n   All other whitespace\n   is preserved.\n"]);
+        });
+    });
 });
 
 describe('Toml::parseFile()', function () {

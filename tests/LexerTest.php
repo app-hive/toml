@@ -688,11 +688,119 @@ describe('Lexer', function () {
             expect($tokens[0]->value)->toBe("line1\nline2");
         });
 
+        it('strips CRLF immediately after opening delimiter', function () {
+            $lexer = new Lexer("'''\r\nline1\r\nline2'''");
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[0]->value)->toBe("line1\nline2");
+        });
+
         it('preserves backslashes', function () {
             $lexer = new Lexer("'''C:\\path\\to\\file'''");
             $tokens = $lexer->tokenize();
 
             expect($tokens[0]->value)->toBe('C:\\path\\to\\file');
+        });
+
+        it('does NOT process escape sequences', function () {
+            $lexer = new Lexer("'''\\b\\t\\n\\f\\r\\\\'''");
+            $tokens = $lexer->tokenize();
+
+            // All backslash sequences are preserved literally
+            expect($tokens[0]->value)->toBe('\\b\\t\\n\\f\\r\\\\');
+        });
+
+        it('does NOT process unicode escape sequences', function () {
+            $lexer = new Lexer("'''\\u0041'''");
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[0]->value)->toBe('\\u0041');
+        });
+
+        it('allows single quotes in content', function () {
+            $lexer = new Lexer("'''I'm a string with 'quotes' inside'''");
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[0]->value)->toBe("I'm a string with 'quotes' inside");
+        });
+
+        it('allows two consecutive quotes in content', function () {
+            $lexer = new Lexer("'''Two quotes: ''here'''");
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[0]->value)->toBe("Two quotes: ''here");
+        });
+
+        it('allows up to two additional quotes at end before closing', function () {
+            $lexer = new Lexer("'''hello'''''");
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[0]->value)->toBe("hello''");
+        });
+
+        it('allows one additional quote at end before closing', function () {
+            $lexer = new Lexer("'''hello''''");
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[0]->value)->toBe("hello'");
+        });
+
+        it('handles empty multiline literal string', function () {
+            $lexer = new Lexer("''''''");
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[0]->type)->toBe(TokenType::MultilineLiteralString);
+            expect($tokens[0]->value)->toBe('');
+        });
+
+        it('normalizes CRLF to LF in content', function () {
+            $lexer = new Lexer("'''line1\r\nline2'''");
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[0]->value)->toBe("line1\nline2");
+        });
+
+        it('preserves regex patterns', function () {
+            $lexer = new Lexer("'''<\\i\\c*\\s*>'''");
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[0]->value)->toBe('<\\i\\c*\\s*>');
+        });
+
+        it('preserves line-ending backslash literally (no line folding)', function () {
+            // Unlike multiline basic strings, literal strings don't support line-ending backslash
+            $lexer = new Lexer("'''hello \\\nworld'''");
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[0]->value)->toBe("hello \\\nworld");
+        });
+
+        it('throws on unterminated multiline literal string', function () {
+            $lexer = new Lexer("'''unterminated");
+            $lexer->tokenize();
+        })->throws(TomlParseException::class, 'Unterminated multiline literal string');
+
+        it('tracks correct line and column', function () {
+            $lexer = new Lexer("key = '''value'''");
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[2]->type)->toBe(TokenType::MultilineLiteralString);
+            expect($tokens[2]->line)->toBe(1);
+            expect($tokens[2]->column)->toBe(7);
+        });
+
+        it('can be used in key-value context', function () {
+            $lexer = new Lexer("path = '''C:\\Users\\admin'''");
+            $tokens = $lexer->tokenize();
+
+            $types = array_map(fn (Token $t) => $t->type, $tokens);
+            expect($types)->toBe([
+                TokenType::BareKey,
+                TokenType::Equals,
+                TokenType::MultilineLiteralString,
+                TokenType::Eof,
+            ]);
+            expect($tokens[2]->value)->toBe('C:\\Users\\admin');
         });
     });
 
