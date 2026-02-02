@@ -368,6 +368,174 @@ TOML;
             ]);
         });
     });
+
+    describe('multi-line basic strings', function () {
+        it('parses simple multi-line basic string with triple double quotes', function () {
+            $toml = 'str = """hello world"""';
+            expect(Toml::parse($toml))->toBe(['str' => 'hello world']);
+        });
+
+        it('trims newline immediately following opening delimiter', function () {
+            $toml = <<<'TOML'
+str = """
+hello world"""
+TOML;
+            expect(Toml::parse($toml))->toBe(['str' => 'hello world']);
+        });
+
+        it('preserves content when no newline after opening delimiter', function () {
+            $toml = 'str = """hello world"""';
+            expect(Toml::parse($toml))->toBe(['str' => 'hello world']);
+        });
+
+        it('preserves newlines within the string content', function () {
+            $toml = <<<'TOML'
+str = """
+line 1
+line 2
+line 3"""
+TOML;
+            expect(Toml::parse($toml))->toBe(['str' => "line 1\nline 2\nline 3"]);
+        });
+
+        it('handles line-ending backslash to trim whitespace and newlines', function () {
+            $toml = <<<'TOML'
+str = """
+The quick brown \
+    fox jumps over \
+    the lazy dog."""
+TOML;
+            expect(Toml::parse($toml))->toBe(['str' => 'The quick brown fox jumps over the lazy dog.']);
+        });
+
+        it('handles line-ending backslash at start of content', function () {
+            $toml = "str = \"\"\"\\\n  hello\"\"\"";
+            expect(Toml::parse($toml))->toBe(['str' => 'hello']);
+        });
+
+        it('processes escape sequences same as basic strings - newline', function () {
+            $toml = 'str = """hello\\nworld"""';
+            expect(Toml::parse($toml))->toBe(['str' => "hello\nworld"]);
+        });
+
+        it('processes escape sequences same as basic strings - tab', function () {
+            $toml = 'str = """hello\\tworld"""';
+            expect(Toml::parse($toml))->toBe(['str' => "hello\tworld"]);
+        });
+
+        it('processes escape sequences same as basic strings - carriage return', function () {
+            $toml = 'str = """hello\\rworld"""';
+            expect(Toml::parse($toml))->toBe(['str' => "hello\rworld"]);
+        });
+
+        it('processes escape sequences same as basic strings - backslash', function () {
+            $toml = 'str = """hello\\\\world"""';
+            expect(Toml::parse($toml))->toBe(['str' => 'hello\\world']);
+        });
+
+        it('processes escape sequences same as basic strings - double quote', function () {
+            $toml = 'str = """hello \\"world\\"!"""';
+            expect(Toml::parse($toml))->toBe(['str' => 'hello "world"!']);
+        });
+
+        it('processes unicode escape sequences - short form', function () {
+            $toml = 'str = """hello \\u0041 world"""';
+            expect(Toml::parse($toml))->toBe(['str' => 'hello A world']);
+        });
+
+        it('processes unicode escape sequences - long form', function () {
+            $toml = 'str = """hello \\U0001F600 world"""';
+            expect(Toml::parse($toml))->toBe(['str' => 'hello 😀 world']);
+        });
+
+        it('processes backspace escape sequence', function () {
+            $toml = 'str = """hello\\bworld"""';
+            expect(Toml::parse($toml))->toBe(['str' => "hello\x08world"]);
+        });
+
+        it('processes form feed escape sequence', function () {
+            $toml = 'str = """hello\\fworld"""';
+            expect(Toml::parse($toml))->toBe(['str' => "hello\x0Cworld"]);
+        });
+
+        it('allows up to two quotes at the end before closing delimiter', function () {
+            $toml = 'str = """hello"""""';
+            expect(Toml::parse($toml))->toBe(['str' => 'hello""']);
+        });
+
+        it('allows one quote at the end before closing delimiter', function () {
+            $toml = 'str = """hello""""';
+            expect(Toml::parse($toml))->toBe(['str' => 'hello"']);
+        });
+
+        it('allows quotes within the string content', function () {
+            $toml = 'str = """Here are two quotes: "". Simple enough."""';
+            expect(Toml::parse($toml))->toBe(['str' => 'Here are two quotes: "". Simple enough.']);
+        });
+
+        it('trims CRLF immediately following opening delimiter', function () {
+            $toml = "str = \"\"\"\r\nhello world\"\"\"";
+            expect(Toml::parse($toml))->toBe(['str' => 'hello world']);
+        });
+
+        it('normalizes CRLF to LF within content', function () {
+            $toml = "str = \"\"\"\r\nline 1\r\nline 2\"\"\"";
+            expect(Toml::parse($toml))->toBe(['str' => "line 1\nline 2"]);
+        });
+
+        it('handles empty multi-line basic string', function () {
+            $toml = 'str = """"""';
+            expect(Toml::parse($toml))->toBe(['str' => '']);
+        });
+
+        it('handles multi-line string with only whitespace', function () {
+            $toml = 'str = """   """';
+            expect(Toml::parse($toml))->toBe(['str' => '   ']);
+        });
+
+        it('handles line-ending backslash followed by multiple newlines', function () {
+            $toml = "str = \"\"\"hello \\\n\n\n  world\"\"\"";
+            expect(Toml::parse($toml))->toBe(['str' => 'hello world']);
+        });
+
+        it('handles line-ending backslash with tabs and spaces', function () {
+            $toml = "str = \"\"\"hello \\\n\t  \t  world\"\"\"";
+            expect(Toml::parse($toml))->toBe(['str' => 'hello world']);
+        });
+
+        it('parses multi-line basic strings in real-world TOML example', function () {
+            $toml = <<<'TOML'
+description = """
+This is a multi-line description
+that spans several lines.
+It preserves the line breaks."""
+
+sql = """
+SELECT *
+FROM users
+WHERE active = true"""
+
+trimmed = """
+The quick brown \
+    fox jumps over \
+    the lazy dog."""
+TOML;
+            $result = Toml::parse($toml);
+            expect($result['description'])->toBe("This is a multi-line description\nthat spans several lines.\nIt preserves the line breaks.");
+            expect($result['sql'])->toBe("SELECT *\nFROM users\nWHERE active = true");
+            expect($result['trimmed'])->toBe('The quick brown fox jumps over the lazy dog.');
+        });
+
+        it('handles escape sequence (e) for escape character', function () {
+            $toml = 'str = """hello\\eworld"""';
+            expect(Toml::parse($toml))->toBe(['str' => "hello\x1Bworld"]);
+        });
+
+        it('handles hex escape sequence (x)', function () {
+            $toml = 'str = """hello\\x41world"""';
+            expect(Toml::parse($toml))->toBe(['str' => 'helloAworld']);
+        });
+    });
 });
 
 describe('Toml::parseFile()', function () {
