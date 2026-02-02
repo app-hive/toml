@@ -19,14 +19,9 @@ use AppHive\Toml\Toml;
  * - Unicode escapes: Parser doesn't validate all unicode escape sequences
  */
 const KNOWN_INVALID_FAILURES = [
-    // Control character validation - parser doesn't reject all invalid control chars
-    'control / bare-cr',
     // Multiline string CR handling - bare CR in multiline strings is treated as newline
     'control / multi-cr',
     'control / rawmulti-cr',
-    // Bare control characters outside strings - parser doesn't validate all bare control chars
-    'control / only-null',
-    'control / only-vt',
     // Tests from control.multi file - these contain literal \xNN sequences as text, not actual control chars
     // The .multi file format expects pre-processing that isn't being done
     'control / control / comment-cr',

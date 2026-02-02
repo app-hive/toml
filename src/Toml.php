@@ -35,6 +35,10 @@ final class Toml
      */
     public static function parse(string $toml, ?ParserConfig $config = null): array
     {
+        // First check for invalid control characters before any trimming
+        // This catches cases like a document containing only a null byte
+        self::validateNoInvalidControlCharacters($toml);
+
         if (trim($toml) === '') {
             return [];
         }
@@ -128,5 +132,67 @@ final class Toml
         }
 
         return new Parser($contents, $config);
+    }
+
+    /**
+     * Validate that the input string doesn't contain invalid control characters.
+     * This is called before trimming to catch documents that consist only of control characters.
+     *
+     * Invalid control characters are U+0000-U+001F (except tab U+0009, newline U+000A, and CRLF)
+     * and U+007F (DEL). Bare CR (U+000D not followed by U+000A) is also invalid.
+     *
+     * @throws TomlParseException When an invalid control character is found
+     */
+    private static function validateNoInvalidControlCharacters(string $toml): void
+    {
+        $length = strlen($toml);
+        $line = 1;
+        $column = 1;
+
+        for ($i = 0; $i < $length; $i++) {
+            $ord = ord($toml[$i]);
+
+            // Check for invalid control characters
+            // Allowed: tab (0x09), newline (0x0A), CRLF (0x0D 0x0A)
+            if ($ord <= 0x1F && $ord !== 0x09 && $ord !== 0x0A && $ord !== 0x0D) {
+                throw new TomlParseException(
+                    sprintf('Control character U+%04X is not allowed in TOML documents', $ord),
+                    $line,
+                    $column,
+                    $toml
+                );
+            }
+
+            // Carriage return is only valid when followed by newline (CRLF)
+            if ($ord === 0x0D) {
+                $nextOrd = ($i + 1 < $length) ? ord($toml[$i + 1]) : null;
+                if ($nextOrd !== 0x0A) {
+                    throw new TomlParseException(
+                        'Bare carriage return (U+000D) is not allowed; must be followed by newline (CRLF)',
+                        $line,
+                        $column,
+                        $toml
+                    );
+                }
+            }
+
+            // DEL character (0x7F) is also not allowed
+            if ($ord === 0x7F) {
+                throw new TomlParseException(
+                    'Control character U+007F (DEL) is not allowed in TOML documents',
+                    $line,
+                    $column,
+                    $toml
+                );
+            }
+
+            // Track line and column for error reporting
+            if ($toml[$i] === "\n") {
+                $line++;
+                $column = 1;
+            } else {
+                $column++;
+            }
+        }
     }
 }

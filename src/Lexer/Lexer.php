@@ -54,6 +54,11 @@ final class Lexer
         }
 
         $char = $this->peek();
+        assert($char !== null);
+
+        // Validate that control characters are not present in bare document content
+        // Control characters must be inside strings (escaped) or are simply not allowed
+        $this->validateBareControlCharacter($char);
 
         // Handle comments
         if ($char === '#') {
@@ -80,8 +85,14 @@ final class Lexer
                 return new Token(TokenType::Newline, "\r\n", $line, $column);
             }
 
-            // Bare CR is treated as whitespace, skip it
-            return null;
+            // Bare CR is not allowed - should have been caught by validateBareControlCharacter
+            // but if we get here somehow, reject it
+            throw new TomlParseException(
+                'Bare carriage return (U+000D) is not allowed outside strings',
+                $this->line,
+                $this->column - 1,
+                $this->source
+            );
         }
 
         // Structural tokens
@@ -195,6 +206,39 @@ final class Lexer
         if (($ord <= 0x1F && $ord !== 0x09) || $ord === 0x7F) {
             throw new TomlParseException(
                 sprintf('Control character U+%04X is not allowed in literal strings', $ord),
+                $this->line,
+                $this->column,
+                $this->source
+            );
+        }
+    }
+
+    /**
+     * Validate that a character is not a control character appearing as bare document content.
+     * Control characters are not allowed outside of strings (where they must be escaped).
+     * Allowed: newline (U+000A), carriage return followed by newline (CRLF), and tab (U+0009).
+     * Tab is only allowed as whitespace, not in bare keys or values.
+     */
+    private function validateBareControlCharacter(string $char): void
+    {
+        $ord = ord($char);
+        // Control characters U+0000 to U+001F are not allowed in bare document content
+        // Exceptions:
+        // - Tab (U+0009) is allowed as whitespace (handled by skipWhitespace)
+        // - Newline (U+000A) is a valid token
+        // - Carriage return (U+000D) is only allowed when followed by newline (CRLF)
+        // U+007F (DEL) is also not allowed
+        if ($ord <= 0x1F && $ord !== 0x09 && $ord !== 0x0A && $ord !== 0x0D) {
+            throw new TomlParseException(
+                sprintf('Control character U+%04X is not allowed in TOML documents', $ord),
+                $this->line,
+                $this->column,
+                $this->source
+            );
+        }
+        if ($ord === 0x7F) {
+            throw new TomlParseException(
+                'Control character U+007F (DEL) is not allowed in TOML documents',
                 $this->line,
                 $this->column,
                 $this->source
