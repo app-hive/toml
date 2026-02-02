@@ -801,6 +801,48 @@ TOML;
             expect($result['ldt'])->toBeString();
         });
     });
+
+    describe('local dates', function () {
+        it('parses local date', function () {
+            expect(Toml::parse('ld1 = 1979-05-27'))->toBe(['ld1' => '1979-05-27']);
+        });
+
+        it('parses various valid dates', function () {
+            expect(Toml::parse('ld1 = 2024-01-01'))->toBe(['ld1' => '2024-01-01']);
+            expect(Toml::parse('ld2 = 2000-12-31'))->toBe(['ld2' => '2000-12-31']);
+            expect(Toml::parse('ld3 = 1999-06-15'))->toBe(['ld3' => '1999-06-15']);
+        });
+
+        it('parses multiple local date key-value pairs', function () {
+            $toml = <<<'TOML'
+birthday = 1979-05-27
+anniversary = 2024-01-15
+deadline = 2025-12-31
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'birthday' => '1979-05-27',
+                'anniversary' => '2024-01-15',
+                'deadline' => '2025-12-31',
+            ]);
+        });
+
+        it('parses local dates in real-world TOML example', function () {
+            $toml = <<<'TOML'
+release_date = 2023-06-15
+end_of_life = 2025-06-15
+start_date = 2020-01-01
+TOML;
+            $result = Toml::parse($toml);
+            expect($result['release_date'])->toBe('2023-06-15');
+            expect($result['end_of_life'])->toBe('2025-06-15');
+            expect($result['start_date'])->toBe('2020-01-01');
+        });
+
+        it('returns string type for local dates', function () {
+            $result = Toml::parse('ld = 1979-05-27');
+            expect($result['ld'])->toBeString();
+        });
+    });
 });
 
 describe('Toml::parseFile()', function () {

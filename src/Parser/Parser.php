@@ -130,7 +130,8 @@ final class Parser
             TokenType::MultilineBasicString,
             TokenType::MultilineLiteralString => $this->parseString(),
             TokenType::OffsetDateTime,
-            TokenType::LocalDateTime => $this->parseDateTime(),
+            TokenType::LocalDateTime,
+            TokenType::LocalDate => $this->parseDateTime(),
             default => throw new TomlParseException(
                 "Unexpected value type: {$token->type->value}",
                 $token->line,
