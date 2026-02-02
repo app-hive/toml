@@ -807,8 +807,10 @@ final class Lexer
 
         // Handle sign
         $currentChar = $this->peek();
+        $hasSign = false;
         if ($currentChar === '+' || $currentChar === '-') {
             $sign = $this->advance();
+            $hasSign = true;
 
             // Check for inf/nan after sign
             $nextChar = $this->peek();
@@ -833,25 +835,82 @@ final class Lexer
         // Check for hex, octal, or binary
         if ($this->peek() === '0' && $this->lookAhead(1) !== null) {
             $prefix = $this->lookAhead(1);
-            if ($prefix === 'x' || $prefix === 'X') {
+
+            // Reject capital prefixes (0X, 0O, 0B)
+            if ($prefix === 'X') {
+                throw new TomlParseException(
+                    'Hexadecimal prefix must be lowercase (0x, not 0X)',
+                    $line,
+                    $column,
+                    $this->source
+                );
+            }
+            if ($prefix === 'O') {
+                throw new TomlParseException(
+                    'Octal prefix must be lowercase (0o, not 0O)',
+                    $line,
+                    $column,
+                    $this->source
+                );
+            }
+            if ($prefix === 'B') {
+                throw new TomlParseException(
+                    'Binary prefix must be lowercase (0b, not 0B)',
+                    $line,
+                    $column,
+                    $this->source
+                );
+            }
+
+            if ($prefix === 'x') {
+                // Reject signed hex numbers
+                if ($hasSign) {
+                    throw new TomlParseException(
+                        'Hexadecimal integers cannot have a sign prefix',
+                        $line,
+                        $column,
+                        $this->source
+                    );
+                }
+
                 return $this->scanHexNumber($line, $column, $value);
             }
-            if ($prefix === 'o' || $prefix === 'O') {
+            if ($prefix === 'o') {
+                // Reject signed octal numbers
+                if ($hasSign) {
+                    throw new TomlParseException(
+                        'Octal integers cannot have a sign prefix',
+                        $line,
+                        $column,
+                        $this->source
+                    );
+                }
+
                 return $this->scanOctalNumber($line, $column, $value);
             }
-            if ($prefix === 'b' || $prefix === 'B') {
+            if ($prefix === 'b') {
+                // Reject signed binary numbers
+                if ($hasSign) {
+                    throw new TomlParseException(
+                        'Binary integers cannot have a sign prefix',
+                        $line,
+                        $column,
+                        $this->source
+                    );
+                }
+
                 return $this->scanBinaryNumber($line, $column, $value);
             }
         }
 
         // Scan integer part
-        $value .= $this->scanDigits();
+        $value .= $this->scanDigits($line, $column);
 
         // Check for decimal point (float)
         if ($this->peek() === '.' && $this->isDigit($this->lookAhead(1))) {
             $isFloat = true;
             $value .= $this->advance(); // consume dot
-            $value .= $this->scanDigits();
+            $value .= $this->scanDigits($line, $column);
         }
 
         // Check for exponent (float)
@@ -863,25 +922,58 @@ final class Lexer
             if ($signChar === '+' || $signChar === '-') {
                 $value .= $this->advance();
             }
-            $value .= $this->scanDigits();
+            $value .= $this->scanDigits($line, $column);
         }
 
         return new Token($isFloat ? TokenType::Float : TokenType::Integer, $value, $line, $column);
     }
 
-    private function scanDigits(): string
+    private function scanDigits(int $line, int $column): string
     {
         $digits = '';
+        $lastWasUnderscore = false;
+        $hasDigits = false;
+
         while (! $this->isAtEnd()) {
             $char = $this->peek();
             if ($this->isDigit($char)) {
                 $digits .= $this->advance();
+                $lastWasUnderscore = false;
+                $hasDigits = true;
             } elseif ($char === '_') {
-                // Underscores are allowed between digits for readability
+                // Reject leading underscore (underscore before any digit)
+                if (! $hasDigits) {
+                    throw new TomlParseException(
+                        'Leading underscore is not allowed in integers',
+                        $line,
+                        $this->column,
+                        $this->source
+                    );
+                }
+                // Reject double underscore
+                if ($lastWasUnderscore) {
+                    throw new TomlParseException(
+                        'Double underscore is not allowed in integers',
+                        $line,
+                        $this->column,
+                        $this->source
+                    );
+                }
                 $this->advance();
+                $lastWasUnderscore = true;
             } else {
                 break;
             }
+        }
+
+        // Reject trailing underscore
+        if ($lastWasUnderscore) {
+            throw new TomlParseException(
+                'Trailing underscore is not allowed in integers',
+                $line,
+                $this->column - 1,
+                $this->source
+            );
         }
 
         return $digits;
@@ -893,15 +985,60 @@ final class Lexer
         $value .= $this->advance(); // consume '0'
         $value .= $this->advance(); // consume 'x'
 
+        $lastWasUnderscore = false;
+        $hasDigits = false;
+
+        // Check for leading underscore after prefix
+        if ($this->peek() === '_') {
+            throw new TomlParseException(
+                'Underscore immediately after hex prefix is not allowed',
+                $line,
+                $this->column,
+                $this->source
+            );
+        }
+
         while (! $this->isAtEnd()) {
             $char = $this->peek();
             if (ctype_xdigit($char)) {
                 $value .= $this->advance();
+                $lastWasUnderscore = false;
+                $hasDigits = true;
             } elseif ($char === '_') {
+                // Reject double underscore
+                if ($lastWasUnderscore) {
+                    throw new TomlParseException(
+                        'Double underscore is not allowed in integers',
+                        $line,
+                        $this->column,
+                        $this->source
+                    );
+                }
                 $this->advance();
+                $lastWasUnderscore = true;
             } else {
                 break;
             }
+        }
+
+        // Reject trailing underscore
+        if ($lastWasUnderscore) {
+            throw new TomlParseException(
+                'Trailing underscore is not allowed in integers',
+                $line,
+                $this->column - 1,
+                $this->source
+            );
+        }
+
+        // Reject incomplete hex (0x with no digits)
+        if (! $hasDigits) {
+            throw new TomlParseException(
+                'Hexadecimal integer must have at least one digit after prefix',
+                $line,
+                $column,
+                $this->source
+            );
         }
 
         return new Token(TokenType::Integer, $value, $line, $column);
@@ -913,15 +1050,60 @@ final class Lexer
         $value .= $this->advance(); // consume '0'
         $value .= $this->advance(); // consume 'o'
 
+        $lastWasUnderscore = false;
+        $hasDigits = false;
+
+        // Check for leading underscore after prefix
+        if ($this->peek() === '_') {
+            throw new TomlParseException(
+                'Underscore immediately after octal prefix is not allowed',
+                $line,
+                $this->column,
+                $this->source
+            );
+        }
+
         while (! $this->isAtEnd()) {
             $char = $this->peek();
             if ($char >= '0' && $char <= '7') {
                 $value .= $this->advance();
+                $lastWasUnderscore = false;
+                $hasDigits = true;
             } elseif ($char === '_') {
+                // Reject double underscore
+                if ($lastWasUnderscore) {
+                    throw new TomlParseException(
+                        'Double underscore is not allowed in integers',
+                        $line,
+                        $this->column,
+                        $this->source
+                    );
+                }
                 $this->advance();
+                $lastWasUnderscore = true;
             } else {
                 break;
             }
+        }
+
+        // Reject trailing underscore
+        if ($lastWasUnderscore) {
+            throw new TomlParseException(
+                'Trailing underscore is not allowed in integers',
+                $line,
+                $this->column - 1,
+                $this->source
+            );
+        }
+
+        // Reject incomplete octal (0o with no digits)
+        if (! $hasDigits) {
+            throw new TomlParseException(
+                'Octal integer must have at least one digit after prefix',
+                $line,
+                $column,
+                $this->source
+            );
         }
 
         return new Token(TokenType::Integer, $value, $line, $column);
@@ -933,15 +1115,60 @@ final class Lexer
         $value .= $this->advance(); // consume '0'
         $value .= $this->advance(); // consume 'b'
 
+        $lastWasUnderscore = false;
+        $hasDigits = false;
+
+        // Check for leading underscore after prefix
+        if ($this->peek() === '_') {
+            throw new TomlParseException(
+                'Underscore immediately after binary prefix is not allowed',
+                $line,
+                $this->column,
+                $this->source
+            );
+        }
+
         while (! $this->isAtEnd()) {
             $char = $this->peek();
             if ($char === '0' || $char === '1') {
                 $value .= $this->advance();
+                $lastWasUnderscore = false;
+                $hasDigits = true;
             } elseif ($char === '_') {
+                // Reject double underscore
+                if ($lastWasUnderscore) {
+                    throw new TomlParseException(
+                        'Double underscore is not allowed in integers',
+                        $line,
+                        $this->column,
+                        $this->source
+                    );
+                }
                 $this->advance();
+                $lastWasUnderscore = true;
             } else {
                 break;
             }
+        }
+
+        // Reject trailing underscore
+        if ($lastWasUnderscore) {
+            throw new TomlParseException(
+                'Trailing underscore is not allowed in integers',
+                $line,
+                $this->column - 1,
+                $this->source
+            );
+        }
+
+        // Reject incomplete binary (0b with no digits)
+        if (! $hasDigits) {
+            throw new TomlParseException(
+                'Binary integer must have at least one digit after prefix',
+                $line,
+                $column,
+                $this->source
+            );
         }
 
         return new Token(TokenType::Integer, $value, $line, $column);

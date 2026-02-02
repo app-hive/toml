@@ -207,9 +207,10 @@ TOML;
             expect(Toml::parse('hex = 0xDEADBEEF'))->toBe(['hex' => 0xDEADBEEF]);
         });
 
-        it('parses hexadecimal integers case insensitive', function () {
+        it('parses hexadecimal integers with case insensitive digits', function () {
+            // Hex digits are case insensitive, but the prefix must be lowercase (0x)
             expect(Toml::parse('hex = 0xdeadbeef'))->toBe(['hex' => 0xDEADBEEF]);
-            expect(Toml::parse('hex = 0XDeAdBeEf'))->toBe(['hex' => 0xDEADBEEF]);
+            expect(Toml::parse('hex = 0xDeAdBeEf'))->toBe(['hex' => 0xDEADBEEF]);
         });
 
         it('parses octal integers', function () {
