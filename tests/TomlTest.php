@@ -747,6 +747,60 @@ TOML;
             expect($result['odt'])->toBeString();
         });
     });
+
+    describe('local date-times', function () {
+        it('parses local date-time without timezone', function () {
+            expect(Toml::parse('ldt1 = 1979-05-27T07:32:00'))->toBe(['ldt1' => '1979-05-27T07:32:00']);
+        });
+
+        it('supports fractional seconds', function () {
+            expect(Toml::parse('ldt2 = 1979-05-27T00:32:00.999999'))->toBe(['ldt2' => '1979-05-27T00:32:00.999999']);
+        });
+
+        it('allows space instead of T separator', function () {
+            expect(Toml::parse('ldt3 = 1979-05-27 07:32:00'))->toBe(['ldt3' => '1979-05-27 07:32:00']);
+        });
+
+        it('supports fractional seconds with space separator', function () {
+            expect(Toml::parse('ldt4 = 1979-05-27 00:32:00.999999'))->toBe(['ldt4' => '1979-05-27 00:32:00.999999']);
+        });
+
+        it('preserves lowercase t separator', function () {
+            expect(Toml::parse('ldt5 = 1979-05-27t07:32:00'))->toBe(['ldt5' => '1979-05-27t07:32:00']);
+        });
+
+        it('parses multiple local date-time key-value pairs', function () {
+            $toml = <<<'TOML'
+start = 1979-05-27T07:32:00
+end = 2024-01-15T14:30:00
+precise = 2025-12-31T23:59:59.999999
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'start' => '1979-05-27T07:32:00',
+                'end' => '2024-01-15T14:30:00',
+                'precise' => '2025-12-31T23:59:59.999999',
+            ]);
+        });
+
+        it('parses local date-times in real-world TOML example', function () {
+            $toml = <<<'TOML'
+meeting_start = 2023-06-15T09:00:00
+meeting_end = 2023-06-15T17:00:00
+deadline = 2023-06-15 23:59:59
+precise_time = 2023-06-15T13:00:00.123456
+TOML;
+            $result = Toml::parse($toml);
+            expect($result['meeting_start'])->toBe('2023-06-15T09:00:00');
+            expect($result['meeting_end'])->toBe('2023-06-15T17:00:00');
+            expect($result['deadline'])->toBe('2023-06-15 23:59:59');
+            expect($result['precise_time'])->toBe('2023-06-15T13:00:00.123456');
+        });
+
+        it('returns string type for local date-times', function () {
+            $result = Toml::parse('ldt = 1979-05-27T07:32:00');
+            expect($result['ldt'])->toBeString();
+        });
+    });
 });
 
 describe('Toml::parseFile()', function () {
