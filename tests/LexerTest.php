@@ -410,6 +410,14 @@ describe('Lexer', function () {
             expect($tokens[0]->value)->toBe('hello world');
         });
 
+        it('tokenizes empty literal strings', function () {
+            $lexer = new Lexer("''");
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[0]->type)->toBe(TokenType::LiteralString);
+            expect($tokens[0]->value)->toBe('');
+        });
+
         it('preserves backslashes without escaping', function () {
             $lexer = new Lexer("'C:\\path\\to\\file'");
             $tokens = $lexer->tokenize();
@@ -417,10 +425,92 @@ describe('Lexer', function () {
             expect($tokens[0]->value)->toBe('C:\\path\\to\\file');
         });
 
+        it('preserves backslash-n as literal characters (no newline escape)', function () {
+            $lexer = new Lexer("'line1\\nline2'");
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[0]->value)->toBe('line1\\nline2');
+        });
+
+        it('preserves backslash-t as literal characters (no tab escape)', function () {
+            $lexer = new Lexer("'hello\\tworld'");
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[0]->value)->toBe('hello\\tworld');
+        });
+
+        it('preserves all escape-like sequences as literal characters', function () {
+            $lexer = new Lexer("'\\b\\t\\n\\f\\r\\\\'");
+            $tokens = $lexer->tokenize();
+
+            // All backslash sequences are preserved literally - no escape processing
+            expect($tokens[0]->value)->toBe('\\b\\t\\n\\f\\r\\\\');
+        });
+
+        it('preserves unicode escape-like sequences as literal characters', function () {
+            $lexer = new Lexer("'\\u0041'");
+            $tokens = $lexer->tokenize();
+
+            // Unicode escape sequence is preserved literally, not converted to 'A'
+            expect($tokens[0]->value)->toBe('\\u0041');
+        });
+
+        it('preserves double backslashes as literal characters', function () {
+            $lexer = new Lexer("'\\\\server\\share'");
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[0]->value)->toBe('\\\\server\\share');
+        });
+
+        it('preserves regex patterns as literal characters', function () {
+            $lexer = new Lexer("'<\\i\\c*\\s*>'");
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[0]->value)->toBe('<\\i\\c*\\s*>');
+        });
+
         it('throws on unterminated literal string', function () {
             $lexer = new Lexer("'unterminated");
             $lexer->tokenize();
         })->throws(TomlParseException::class, 'Unterminated literal string');
+
+        it('throws on newline in literal string', function () {
+            $lexer = new Lexer("'line1\nline2'");
+            $lexer->tokenize();
+        })->throws(TomlParseException::class, 'Unterminated literal string');
+
+        it('throws on carriage return in literal string', function () {
+            $lexer = new Lexer("'line1\rline2'");
+            $lexer->tokenize();
+        })->throws(TomlParseException::class, 'Unterminated literal string');
+
+        it('throws on CRLF in literal string', function () {
+            $lexer = new Lexer("'line1\r\nline2'");
+            $lexer->tokenize();
+        })->throws(TomlParseException::class, 'Unterminated literal string');
+
+        it('tracks correct line and column for literal strings', function () {
+            $lexer = new Lexer("key = 'value'");
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[2]->type)->toBe(TokenType::LiteralString);
+            expect($tokens[2]->line)->toBe(1);
+            expect($tokens[2]->column)->toBe(7);
+        });
+
+        it('can be used as a value in key-value pair', function () {
+            $lexer = new Lexer("path = 'C:\\Users\\admin'");
+            $tokens = $lexer->tokenize();
+
+            $types = array_map(fn (Token $t) => $t->type, $tokens);
+            expect($types)->toBe([
+                TokenType::BareKey,
+                TokenType::Equals,
+                TokenType::LiteralString,
+                TokenType::Eof,
+            ]);
+            expect($tokens[2]->value)->toBe('C:\\Users\\admin');
+        });
     });
 
     describe('multiline literal strings', function () {
