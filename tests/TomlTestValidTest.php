@@ -11,7 +11,6 @@ use AppHive\Toml\Toml;
  * Categories of known issues:
  * - Numeric bare keys: Keys like "123", "0", "10e3" are not recognized as valid bare keys
  * - Datetime normalization: Parser doesn't normalize datetime formats (space to T, lowercase z to Z)
- * - Multiline string handling: Some edge cases with line ending escapes
  * - Control character handling: Some control characters in specific contexts
  * - TOML 1.1.0 features: Some TOML 1.1.0 spec features not fully supported
  */
@@ -35,12 +34,9 @@ const KNOWN_VALID_FAILURES = [
     // Datetime tests with numeric bare keys (not datetime normalization issues)
     'datetime / leap-year', // Uses keys like "2000-datetime" which are numeric bare keys
 
-    // Multiline string handling
+    // String handling
     'string / ends-in-whitespace-escape',
     'string / hex-escape',
-    'string / multiline',
-    'string / multiline-empty',
-    'string / multiline-escaped-crlf',
 
     // Table/array handling edge cases
     'array / array-subtables',

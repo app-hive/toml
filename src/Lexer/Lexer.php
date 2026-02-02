@@ -227,8 +227,9 @@ final class Lexer
 
             if ($char === '\\') {
                 // Check for line-ending backslash (trim newlines and whitespace)
-                $next = $this->lookAhead(1);
-                if ($next === "\n" || $next === "\r") {
+                // A backslash followed by optional whitespace (spaces/tabs) and then a newline
+                // is a line-ending backslash that trims all following whitespace and newlines
+                if ($this->isLineEndingBackslash()) {
                     $this->advance(); // consume backslash
                     $this->skipLineEndingBackslash();
                 } else {
@@ -258,6 +259,31 @@ final class Lexer
             $column,
             $this->source
         );
+    }
+
+    /**
+     * Check if the current backslash starts a line-ending backslash sequence.
+     * A line-ending backslash is a backslash followed by optional whitespace and then a newline.
+     */
+    private function isLineEndingBackslash(): bool
+    {
+        $offset = 1; // Start after the backslash
+        while (true) {
+            $char = $this->lookAhead($offset);
+            if ($char === null) {
+                return false;
+            }
+            if ($char === "\n" || $char === "\r") {
+                return true;
+            }
+            if ($char === ' ' || $char === "\t") {
+                $offset++;
+
+                continue;
+            }
+
+            return false;
+        }
     }
 
     private function skipLineEndingBackslash(): void
