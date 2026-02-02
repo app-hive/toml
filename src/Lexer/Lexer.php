@@ -663,6 +663,20 @@ final class Lexer
                     $this->advance();
                 }
 
+                // Check for trailing dot without digits (12:13:14.)
+                if ($this->peek() === '.') {
+                    throw new TomlParseException(
+                        'Fractional seconds must have at least one digit after the decimal point',
+                        $line,
+                        $column,
+                        $this->source
+                    );
+                }
+
+                // Validate time components and fractional seconds
+                $this->validateTime($timeValue, $line, $column);
+                $this->validateFractionalSeconds($timeValue, $line, $column);
+
                 return new Token(TokenType::LocalTime, $timeValue, $line, $column);
             }
             // Match HH:MM (without seconds) - TOML 1.1.0
@@ -671,6 +685,9 @@ final class Lexer
                 for ($i = 0; $i < strlen($timeValue); $i++) {
                     $this->advance();
                 }
+
+                // Validate time components
+                $this->validateTime($timeValue, $line, $column);
 
                 return new Token(TokenType::LocalTime, $timeValue, $line, $column);
             }
@@ -755,6 +772,9 @@ final class Lexer
                 $this->position -= strlen($timePattern) + 1;
                 $this->column -= strlen($timePattern) + 1;
 
+                // Validate date components before returning
+                $this->validateDate($datePattern, $line, $column);
+
                 // Return just the date
                 return new Token(TokenType::LocalDate, $datePattern, $line, $column);
             }
@@ -772,6 +792,15 @@ final class Lexer
                 }
             }
 
+            // Validate date components (first 10 chars: YYYY-MM-DD)
+            $this->validateDate(substr($value, 0, 10), $line, $column);
+
+            // Extract and validate time component
+            // Time starts at position 11 (after separator)
+            $timeWithFraction = $this->extractTimeFromDateTime($value);
+            $this->validateTime($timeWithFraction, $line, $column);
+            $this->validateFractionalSeconds($value, $line, $column);
+
             // Check for timezone offset
             $tzChar = $this->peek();
             if ($tzChar === 'Z' || $tzChar === 'z') {
@@ -783,6 +812,7 @@ final class Lexer
             if ($tzChar === '+' || $tzChar === '-') {
                 $value .= $this->advance();
                 // Parse offset: HH:MM
+                $offsetStart = strlen($value) - 1; // Position of the sign
                 for ($i = 0; $i < 5; $i++) {
                     $char = $this->peek();
                     if ($char === null || (! $this->isDigit($char) && $char !== ':')) {
@@ -791,11 +821,18 @@ final class Lexer
                     $value .= $this->advance();
                 }
 
+                // Validate timezone offset (from the sign to the end)
+                $offset = substr($value, $offsetStart);
+                $this->validateTimezoneOffset($offset, $line, $column);
+
                 return new Token(TokenType::OffsetDateTime, $value, $line, $column);
             }
 
             return new Token(TokenType::LocalDateTime, $value, $line, $column);
         }
+
+        // Validate date before returning LocalDate
+        $this->validateDate($value, $line, $column);
 
         return new Token(TokenType::LocalDate, $value, $line, $column);
     }
@@ -1333,5 +1370,228 @@ final class Lexer
         // TOML spec: unquoted-key = 1*( ALPHA / DIGIT / %x2D / %x5F )
         // Only A-Z, a-z, 0-9, hyphen (-), and underscore (_) are allowed
         return ctype_alnum($char) || $char === '-' || $char === '_';
+    }
+
+    /**
+     * Validate a date string (YYYY-MM-DD).
+     *
+     * @throws TomlParseException if the date is invalid
+     */
+    private function validateDate(string $date, int $line, int $column): void
+    {
+        // Extract year, month, day
+        $year = (int) substr($date, 0, 4);
+        $month = (int) substr($date, 5, 2);
+        $day = (int) substr($date, 8, 2);
+
+        // Validate month (1-12)
+        if ($month < 1 || $month > 12) {
+            throw new TomlParseException(
+                "Invalid month value: {$month}. Month must be between 1 and 12",
+                $line,
+                $column,
+                $this->source
+            );
+        }
+
+        // Validate day (1-31, depending on month)
+        if ($day < 1) {
+            throw new TomlParseException(
+                "Invalid day value: {$day}. Day must be at least 1",
+                $line,
+                $column,
+                $this->source
+            );
+        }
+
+        $maxDay = $this->getDaysInMonth($month, $year);
+        if ($day > $maxDay) {
+            throw new TomlParseException(
+                "Invalid day value: {$day}. {$this->getMonthName($month)} has at most {$maxDay} days",
+                $line,
+                $column,
+                $this->source
+            );
+        }
+    }
+
+    /**
+     * Get the number of days in a given month.
+     */
+    private function getDaysInMonth(int $month, int $year): int
+    {
+        return match ($month) {
+            1, 3, 5, 7, 8, 10, 12 => 31,
+            4, 6, 9, 11 => 30,
+            2 => $this->isLeapYear($year) ? 29 : 28,
+            default => 31,
+        };
+    }
+
+    /**
+     * Check if a year is a leap year.
+     */
+    private function isLeapYear(int $year): bool
+    {
+        // Leap year: divisible by 4, except century years must be divisible by 400
+        return ($year % 4 === 0 && $year % 100 !== 0) || ($year % 400 === 0);
+    }
+
+    /**
+     * Get the name of a month.
+     */
+    private function getMonthName(int $month): string
+    {
+        return match ($month) {
+            1 => 'January',
+            2 => 'February',
+            3 => 'March',
+            4 => 'April',
+            5 => 'May',
+            6 => 'June',
+            7 => 'July',
+            8 => 'August',
+            9 => 'September',
+            10 => 'October',
+            11 => 'November',
+            12 => 'December',
+            default => 'Unknown',
+        };
+    }
+
+    /**
+     * Validate a time string (HH:MM:SS or HH:MM).
+     *
+     * @throws TomlParseException if the time is invalid
+     */
+    private function validateTime(string $time, int $line, int $column): void
+    {
+        // Remove fractional seconds if present
+        $timePart = $time;
+        if (str_contains($time, '.')) {
+            $timePart = substr($time, 0, (int) strpos($time, '.'));
+        }
+
+        // Extract hour, minute, second
+        $parts = explode(':', $timePart);
+        $hour = (int) $parts[0];
+        $minute = (int) $parts[1];
+        $second = isset($parts[2]) ? (int) $parts[2] : 0;
+
+        // Validate hour (0-23)
+        if ($hour < 0 || $hour > 23) {
+            throw new TomlParseException(
+                "Invalid hour value: {$hour}. Hour must be between 0 and 23",
+                $line,
+                $column,
+                $this->source
+            );
+        }
+
+        // Validate minute (0-59)
+        if ($minute < 0 || $minute > 59) {
+            throw new TomlParseException(
+                "Invalid minute value: {$minute}. Minute must be between 0 and 59",
+                $line,
+                $column,
+                $this->source
+            );
+        }
+
+        // Validate second (0-59)
+        if ($second < 0 || $second > 59) {
+            throw new TomlParseException(
+                "Invalid second value: {$second}. Second must be between 0 and 59",
+                $line,
+                $column,
+                $this->source
+            );
+        }
+    }
+
+    /**
+     * Validate a timezone offset string (+HH:MM or -HH:MM).
+     *
+     * @throws TomlParseException if the offset is invalid
+     */
+    private function validateTimezoneOffset(string $offset, int $line, int $column): void
+    {
+        // Expected format: +HH:MM or -HH:MM (6 characters)
+        // The offset already has the sign included
+        if (strlen($offset) !== 6) {
+            throw new TomlParseException(
+                "Invalid timezone offset format: {$offset}. Expected format: +HH:MM or -HH:MM",
+                $line,
+                $column,
+                $this->source
+            );
+        }
+
+        // Check for colon separator at position 3
+        if ($offset[3] !== ':') {
+            throw new TomlParseException(
+                "Invalid timezone offset format: {$offset}. Missing colon separator",
+                $line,
+                $column,
+                $this->source
+            );
+        }
+
+        // Extract hour and minute
+        $hour = (int) substr($offset, 1, 2);
+        $minute = (int) substr($offset, 4, 2);
+
+        // Validate hour (0-23 for offsets, though typically -12 to +14)
+        if ($hour > 23) {
+            throw new TomlParseException(
+                "Invalid timezone offset hour: {$hour}. Hour must be between 0 and 23",
+                $line,
+                $column,
+                $this->source
+            );
+        }
+
+        // Validate minute (0-59)
+        if ($minute > 59) {
+            throw new TomlParseException(
+                "Invalid timezone offset minute: {$minute}. Minute must be between 0 and 59",
+                $line,
+                $column,
+                $this->source
+            );
+        }
+    }
+
+    /**
+     * Validate fractional seconds (must have at least one digit after the dot).
+     *
+     * @throws TomlParseException if the fractional seconds are invalid
+     */
+    private function validateFractionalSeconds(string $value, int $line, int $column): void
+    {
+        // Check for trailing dot without digits
+        if (preg_match('/\.\D|\.$/u', $value)) {
+            throw new TomlParseException(
+                'Fractional seconds must have at least one digit after the decimal point',
+                $line,
+                $column,
+                $this->source
+            );
+        }
+    }
+
+    /**
+     * Extract the time component from a datetime string.
+     * Input format: YYYY-MM-DD[T or t or space]HH:MM[:SS][.fraction]
+     * Returns: HH:MM:SS or HH:MM:SS.fraction
+     */
+    private function extractTimeFromDateTime(string $datetime): string
+    {
+        // Time starts at position 11 (after date and separator)
+        $timeAndRest = substr($datetime, 11);
+
+        // The time part is everything before any timezone indicator
+        // For LocalDateTime and before timezone check, there's no timezone yet
+        return $timeAndRest;
     }
 }
