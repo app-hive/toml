@@ -681,6 +681,72 @@ TOML;
             expect(Toml::parse($toml))->toBe(['str' => "The first newline is\ntrimmed in raw strings.\n   All other whitespace\n   is preserved.\n"]);
         });
     });
+
+    describe('offset date-times', function () {
+        it('parses RFC 3339 format with Z suffix', function () {
+            expect(Toml::parse('odt1 = 1979-05-27T07:32:00Z'))->toBe(['odt1' => '1979-05-27T07:32:00Z']);
+        });
+
+        it('parses with positive offset', function () {
+            expect(Toml::parse('odt2 = 1979-05-27T07:32:00-07:00'))->toBe(['odt2' => '1979-05-27T07:32:00-07:00']);
+        });
+
+        it('parses with negative offset', function () {
+            expect(Toml::parse('odt3 = 1979-05-27T07:32:00+09:00'))->toBe(['odt3' => '1979-05-27T07:32:00+09:00']);
+        });
+
+        it('allows space instead of T separator', function () {
+            expect(Toml::parse('odt4 = 1979-05-27 07:32:00Z'))->toBe(['odt4' => '1979-05-27 07:32:00Z']);
+        });
+
+        it('supports fractional seconds', function () {
+            expect(Toml::parse('odt5 = 1979-05-27T00:32:00.999999Z'))->toBe(['odt5' => '1979-05-27T00:32:00.999999Z']);
+        });
+
+        it('supports fractional seconds with offset', function () {
+            expect(Toml::parse('odt6 = 1979-05-27T00:32:00.999999-07:00'))->toBe(['odt6' => '1979-05-27T00:32:00.999999-07:00']);
+        });
+
+        it('preserves lowercase z suffix', function () {
+            expect(Toml::parse('odt7 = 1979-05-27T07:32:00z'))->toBe(['odt7' => '1979-05-27T07:32:00z']);
+        });
+
+        it('preserves lowercase t separator', function () {
+            expect(Toml::parse('odt8 = 1979-05-27t07:32:00Z'))->toBe(['odt8' => '1979-05-27t07:32:00Z']);
+        });
+
+        it('parses multiple offset date-time key-value pairs', function () {
+            $toml = <<<'TOML'
+created = 1979-05-27T07:32:00Z
+updated = 2024-01-15T14:30:00-05:00
+expires = 2025-12-31T23:59:59.999999+00:00
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'created' => '1979-05-27T07:32:00Z',
+                'updated' => '2024-01-15T14:30:00-05:00',
+                'expires' => '2025-12-31T23:59:59.999999+00:00',
+            ]);
+        });
+
+        it('parses offset date-times in real-world TOML example', function () {
+            $toml = <<<'TOML'
+start_time = 2023-06-15T09:00:00-04:00
+end_time = 2023-06-15T17:00:00-04:00
+utc_timestamp = 2023-06-15T13:00:00Z
+precise_time = 2023-06-15T13:00:00.123456Z
+TOML;
+            $result = Toml::parse($toml);
+            expect($result['start_time'])->toBe('2023-06-15T09:00:00-04:00');
+            expect($result['end_time'])->toBe('2023-06-15T17:00:00-04:00');
+            expect($result['utc_timestamp'])->toBe('2023-06-15T13:00:00Z');
+            expect($result['precise_time'])->toBe('2023-06-15T13:00:00.123456Z');
+        });
+
+        it('returns string type for offset date-times', function () {
+            $result = Toml::parse('odt = 1979-05-27T07:32:00Z');
+            expect($result['odt'])->toBeString();
+        });
+    });
 });
 
 describe('Toml::parseFile()', function () {

@@ -129,6 +129,7 @@ final class Parser
             TokenType::LiteralString,
             TokenType::MultilineBasicString,
             TokenType::MultilineLiteralString => $this->parseString(),
+            TokenType::OffsetDateTime => $this->parseOffsetDateTime(),
             default => throw new TomlParseException(
                 "Unexpected value type: {$token->type->value}",
                 $token->line,
@@ -316,6 +317,17 @@ final class Parser
         $token = $this->advance();
 
         return $token->value === 'true';
+    }
+
+    /**
+     * Parse an offset date-time value.
+     * Returns the value as a string, preserving the original format.
+     */
+    private function parseOffsetDateTime(): string
+    {
+        $token = $this->advance();
+
+        return $token->value;
     }
 
     /**
