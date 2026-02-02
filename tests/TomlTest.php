@@ -303,6 +303,71 @@ TOML;
             expect(is_nan($result['invalid_reading']))->toBeTrue();
         });
     });
+
+    describe('quoted keys', function () {
+        it('parses basic quoted keys with special characters', function () {
+            expect(Toml::parse('"127.0.0.1" = "value"'))->toBe(['127.0.0.1' => 'value']);
+        });
+
+        it('parses basic quoted keys with dots', function () {
+            expect(Toml::parse('"site.name" = "My Site"'))->toBe(['site.name' => 'My Site']);
+        });
+
+        it('parses literal quoted keys with spaces', function () {
+            expect(Toml::parse("'key with spaces' = \"value\""))->toBe(['key with spaces' => 'value']);
+        });
+
+        it('parses literal quoted keys with special characters', function () {
+            expect(Toml::parse("'key:with:colons' = \"value\""))->toBe(['key:with:colons' => 'value']);
+        });
+
+        it('parses empty basic quoted keys', function () {
+            expect(Toml::parse('"" = "blank"'))->toBe(['' => 'blank']);
+        });
+
+        it('parses empty literal quoted keys', function () {
+            expect(Toml::parse("'' = \"blank\""))->toBe(['' => 'blank']);
+        });
+
+        it('parses quoted keys with escape sequences in basic strings', function () {
+            expect(Toml::parse('"key\\nwith\\nnewlines" = "value"'))->toBe(["key\nwith\nnewlines" => 'value']);
+        });
+
+        it('parses quoted keys with unicode escape sequences', function () {
+            expect(Toml::parse('"key\\u0041" = "value"'))->toBe(['keyA' => 'value']);
+        });
+
+        it('preserves backslashes in literal string keys', function () {
+            // Literal strings preserve backslashes as-is (no escape processing)
+            expect(Toml::parse("'C:\\path\\to\\file' = \"value\""))->toBe(['C:\path\to\file' => 'value']);
+        });
+
+        it('parses multiple key-value pairs with quoted keys', function () {
+            $toml = <<<'TOML'
+"127.0.0.1" = "localhost"
+'key with spaces' = "spaced"
+"" = "empty"
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                '127.0.0.1' => 'localhost',
+                'key with spaces' => 'spaced',
+                '' => 'empty',
+            ]);
+        });
+
+        it('parses quoted keys in real-world TOML example', function () {
+            $toml = <<<'TOML'
+"ʎǝʞ" = "unicode key"
+'key\nwith\nliteral\nbackslash\nn' = "literal"
+"quoted \"key\" with quotes" = "meta"
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'ʎǝʞ' => 'unicode key',
+                'key\nwith\nliteral\nbackslash\nn' => 'literal',
+                'quoted "key" with quotes' => 'meta',
+            ]);
+        });
+    });
 });
 
 describe('Toml::parseFile()', function () {
