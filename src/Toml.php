@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace AppHive\Toml;
 
 use AppHive\Toml\Exceptions\TomlParseException;
+use AppHive\Toml\Parser\Parser;
 
 final class Toml
 {
@@ -15,14 +16,13 @@ final class Toml
      */
     public static function parse(string $toml): array
     {
-        // Basic implementation - returns empty array for empty input
-        // Full parser implementation will be added in future user stories
         if (trim($toml) === '') {
             return [];
         }
 
-        // Placeholder for actual parsing logic
-        return [];
+        $parser = new Parser($toml);
+
+        return $parser->parse();
     }
 
     /**

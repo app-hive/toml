@@ -19,6 +19,121 @@ describe('Toml::parse()', function () {
         $result = Toml::parse('');
         expect($result)->toBeArray();
     });
+
+    describe('integers', function () {
+        it('parses simple decimal integers', function () {
+            expect(Toml::parse('count = 99'))->toBe(['count' => 99]);
+        });
+
+        it('parses zero', function () {
+            expect(Toml::parse('zero = 0'))->toBe(['zero' => 0]);
+        });
+
+        it('parses positive signed integers', function () {
+            expect(Toml::parse('positive = +99'))->toBe(['positive' => 99]);
+        });
+
+        it('parses negative integers', function () {
+            expect(Toml::parse('negative = -17'))->toBe(['negative' => -17]);
+        });
+
+        it('parses hexadecimal integers', function () {
+            expect(Toml::parse('hex = 0xDEADBEEF'))->toBe(['hex' => 0xDEADBEEF]);
+        });
+
+        it('parses hexadecimal integers case insensitive', function () {
+            expect(Toml::parse('hex = 0xdeadbeef'))->toBe(['hex' => 0xDEADBEEF]);
+            expect(Toml::parse('hex = 0XDeAdBeEf'))->toBe(['hex' => 0xDEADBEEF]);
+        });
+
+        it('parses octal integers', function () {
+            expect(Toml::parse('octal = 0o755'))->toBe(['octal' => 0o755]);
+        });
+
+        it('parses binary integers', function () {
+            expect(Toml::parse('binary = 0b11010110'))->toBe(['binary' => 0b11010110]);
+        });
+
+        it('parses integers with underscores for readability', function () {
+            expect(Toml::parse('million = 1_000_000'))->toBe(['million' => 1000000]);
+        });
+
+        it('parses hexadecimal with underscores', function () {
+            expect(Toml::parse('hex = 0xDEAD_BEEF'))->toBe(['hex' => 0xDEADBEEF]);
+        });
+
+        it('parses octal with underscores', function () {
+            expect(Toml::parse('octal = 0o7_5_5'))->toBe(['octal' => 0o755]);
+        });
+
+        it('parses binary with underscores', function () {
+            expect(Toml::parse('binary = 0b1101_0110'))->toBe(['binary' => 0b11010110]);
+        });
+
+        it('rejects leading zeros in decimal integers', function () {
+            Toml::parse('invalid = 007');
+        })->throws(TomlParseException::class, 'Leading zeros are not allowed');
+
+        it('rejects leading zeros with sign', function () {
+            Toml::parse('invalid = +007');
+        })->throws(TomlParseException::class, 'Leading zeros are not allowed');
+
+        it('allows 0 by itself', function () {
+            expect(Toml::parse('zero = 0'))->toBe(['zero' => 0]);
+        });
+
+        it('returns string for values exceeding PHP_INT_MAX', function () {
+            // PHP_INT_MAX is 9223372036854775807 on 64-bit systems
+            $result = Toml::parse('big = 9223372036854775808');
+            expect($result['big'])->toBeString();
+            expect($result['big'])->toBe('9223372036854775808');
+        });
+
+        it('returns string for large negative values', function () {
+            // PHP_INT_MIN is -9223372036854775808 on 64-bit systems
+            $result = Toml::parse('big = -9223372036854775809');
+            expect($result['big'])->toBeString();
+            expect($result['big'])->toBe('-9223372036854775809');
+        });
+
+        it('returns PHP integer for values within range', function () {
+            $result = Toml::parse('num = 9223372036854775807');
+            expect($result['num'])->toBeInt();
+            expect($result['num'])->toBe(PHP_INT_MAX);
+        });
+
+        it('parses multiple integer key-value pairs', function () {
+            $toml = <<<'TOML'
+a = 1
+b = 2
+c = 3
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'a' => 1,
+                'b' => 2,
+                'c' => 3,
+            ]);
+        });
+
+        it('parses integers in real-world TOML example', function () {
+            $toml = <<<'TOML'
+port = 8080
+max_connections = 1_000
+timeout_ms = 5000
+flags = 0b1111
+permissions = 0o644
+color = 0xFF00FF
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'port' => 8080,
+                'max_connections' => 1000,
+                'timeout_ms' => 5000,
+                'flags' => 0b1111,
+                'permissions' => 0o644,
+                'color' => 0xFF00FF,
+            ]);
+        });
+    });
 });
 
 describe('Toml::parseFile()', function () {
