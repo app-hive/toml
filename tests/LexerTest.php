@@ -535,13 +535,11 @@ describe('Lexer', function () {
                 $lexer->tokenize();
             })->throws(TomlParseException::class, 'Control character');
 
-            it('allows DEL character (U+007F)', function () {
-                // DEL (U+007F) is not in the U+0000-U+001F range, so it's allowed
+            it('rejects DEL character (U+007F)', function () {
+                // DEL (U+007F) is a control character that must be rejected per TOML spec
                 $lexer = new Lexer("\"hello\x7Fworld\"");
-                $tokens = $lexer->tokenize();
-
-                expect($tokens[0]->value)->toBe("hello\x7Fworld");
-            });
+                $lexer->tokenize();
+            })->throws(TomlParseException::class, 'Control character');
 
             it('provides line and column for control character error', function () {
                 $lexer = new Lexer("\"hello\x00world\"");

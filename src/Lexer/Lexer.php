@@ -176,9 +176,25 @@ final class Lexer
     {
         $ord = ord($char);
         // Control characters U+0000 to U+001F are not allowed, except tab (U+0009)
-        if ($ord <= 0x1F && $ord !== 0x09) {
+        // Also U+007F (DEL) is not allowed
+        if (($ord <= 0x1F && $ord !== 0x09) || $ord === 0x7F) {
             throw new TomlParseException(
                 sprintf('Control character U+%04X is not allowed in basic strings', $ord),
+                $this->line,
+                $this->column,
+                $this->source
+            );
+        }
+    }
+
+    private function validateLiteralControlCharacter(string $char): void
+    {
+        $ord = ord($char);
+        // In literal strings, tab (U+0009) is allowed, but other control chars are not
+        // Control characters U+0000 to U+001F (except tab) and U+007F (DEL) are not allowed
+        if (($ord <= 0x1F && $ord !== 0x09) || $ord === 0x7F) {
+            throw new TomlParseException(
+                sprintf('Control character U+%04X is not allowed in literal strings', $ord),
                 $this->line,
                 $this->column,
                 $this->source
@@ -432,6 +448,7 @@ final class Lexer
 
         while (! $this->isAtEnd()) {
             $char = $this->peek();
+            assert($char !== null);
 
             if ($char === "'") {
                 $this->advance();
@@ -448,6 +465,7 @@ final class Lexer
                 );
             }
 
+            $this->validateLiteralControlCharacter($char);
             $value .= $this->advance();
         }
 
@@ -482,6 +500,7 @@ final class Lexer
 
         while (! $this->isAtEnd()) {
             $char = $this->peek();
+            assert($char !== null);
 
             if ($char === "'" && $this->lookAhead(1) === "'" && $this->lookAhead(2) === "'") {
                 $this->advance();
@@ -510,6 +529,7 @@ final class Lexer
                 $this->line++;
                 $this->column = 1;
             } else {
+                $this->validateLiteralControlCharacter($char);
                 $value .= $this->advance();
             }
         }

@@ -19,13 +19,21 @@ use AppHive\Toml\Toml;
  * - Unicode escapes: Parser doesn't validate all unicode escape sequences
  */
 const KNOWN_INVALID_FAILURES = [
-    // Control character validation - parser doesn't reject invalid control chars
+    // Control character validation - parser doesn't reject invalid control chars in comments
     'control / bare-cr',
     'control / comment-del',
     'control / comment-ff',
     'control / comment-lf',
     'control / comment-null',
     'control / comment-us',
+    // Multiline string CR handling - bare CR in multiline strings is treated as newline
+    'control / multi-cr',
+    'control / rawmulti-cr',
+    // Bare control characters outside strings - parser doesn't validate all bare control chars
+    'control / only-null',
+    'control / only-vt',
+    // Tests from control.multi file - these contain literal \xNN sequences as text, not actual control chars
+    // The .multi file format expects pre-processing that isn't being done
     'control / control / comment-cr',
     'control / control / comment-del',
     'control / control / comment-ff',
@@ -53,20 +61,6 @@ const KNOWN_INVALID_FAILURES = [
     'control / control / string-lf',
     'control / control / string-null',
     'control / control / string-us',
-    'control / multi-cr',
-    'control / multi-del',
-    'control / only-null',
-    'control / only-vt',
-    'control / rawmulti-cr',
-    'control / rawmulti-del',
-    'control / rawmulti-lf',
-    'control / rawmulti-null',
-    'control / rawmulti-us',
-    'control / rawstring-del',
-    'control / rawstring-lf',
-    'control / rawstring-null',
-    'control / rawstring-us',
-    'control / string-del',
 
     // Datetime validation - parser doesn't validate date/time ranges
     'datetime / day-zero',
