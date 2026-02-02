@@ -555,10 +555,15 @@ final class Lexer
         }
 
         // Try to match date pattern: YYYY-MM-DD
+        // We need to look ahead to see the full pattern before committing
         $datePattern = '';
         for ($i = 0; $i < 10; $i++) {
             $char = $this->lookAhead($i);
             if ($char === null) {
+                break;
+            }
+            // Stop if we hit a character that can't be part of a date
+            if ($char !== '-' && ! $this->isDigit($char)) {
                 break;
             }
             $datePattern .= $char;
@@ -577,7 +582,10 @@ final class Lexer
 
         // Check for time component
         $next = $this->peek();
-        if ($next === 'T' || $next === 't' || $next === ' ') {
+        $hasTime = false;
+
+        if ($next === 'T' || $next === 't') {
+            // T or t separator - definitely a datetime
             $separator = $this->advance();
             $value .= $separator;
 
@@ -601,7 +609,36 @@ final class Lexer
             }
 
             $value .= $timePattern;
+            $hasTime = true;
+        } elseif ($next === ' ' && $this->isDigit($this->lookAhead(1))) {
+            // Space separator with digit following - might be a datetime
+            $separator = $this->advance();
+            $value .= $separator;
 
+            // Parse time: HH:MM:SS
+            $timePattern = '';
+            for ($i = 0; $i < 8; $i++) {
+                $char = $this->peek();
+                if ($char === null || (! $this->isDigit($char) && $char !== ':')) {
+                    break;
+                }
+                $timePattern .= $this->advance();
+            }
+
+            if (! preg_match('/^\d{2}:\d{2}:\d{2}$/', $timePattern)) {
+                // Not a valid datetime, restore to after the date and return as LocalDate
+                // We need to "unadvance" by the separator and failed time pattern
+                $this->position -= strlen($timePattern) + 1;
+                $this->column -= strlen($timePattern) + 1;
+                // Return just the date
+                return new Token(TokenType::LocalDate, $datePattern, $line, $column);
+            }
+
+            $value .= $timePattern;
+            $hasTime = true;
+        }
+
+        if ($hasTime) {
             // Check for fractional seconds
             if ($this->peek() === '.') {
                 $value .= $this->advance();

@@ -1709,6 +1709,321 @@ TOML;
     });
 });
 
+describe('arrays', function () {
+    it('parses simple array of integers', function () {
+        expect(Toml::parse('numbers = [ 1, 2, 3 ]'))->toBe([
+            'numbers' => [1, 2, 3],
+        ]);
+    });
+
+    it('parses empty array', function () {
+        expect(Toml::parse('empty = []'))->toBe(['empty' => []]);
+    });
+
+    it('parses array with single element', function () {
+        expect(Toml::parse('single = [ 42 ]'))->toBe(['single' => [42]]);
+    });
+
+    it('parses array of strings', function () {
+        expect(Toml::parse('colors = [ "red", "green", "blue" ]'))->toBe([
+            'colors' => ['red', 'green', 'blue'],
+        ]);
+    });
+
+    it('parses array of floats', function () {
+        expect(Toml::parse('values = [ 1.1, 2.2, 3.3 ]'))->toBe([
+            'values' => [1.1, 2.2, 3.3],
+        ]);
+    });
+
+    it('parses array of booleans', function () {
+        expect(Toml::parse('flags = [ true, false, true ]'))->toBe([
+            'flags' => [true, false, true],
+        ]);
+    });
+
+    it('parses array of dates', function () {
+        expect(Toml::parse('dates = [ 1979-05-27, 2024-01-15 ]'))->toBe([
+            'dates' => ['1979-05-27', '2024-01-15'],
+        ]);
+    });
+
+    it('parses array of datetimes', function () {
+        expect(Toml::parse('times = [ 1979-05-27T07:32:00Z, 2024-01-15T10:30:00-05:00 ]'))->toBe([
+            'times' => ['1979-05-27T07:32:00Z', '2024-01-15T10:30:00-05:00'],
+        ]);
+    });
+
+    it('parses array of local times', function () {
+        expect(Toml::parse('times = [ 07:32:00, 14:30:00 ]'))->toBe([
+            'times' => ['07:32:00', '14:30:00'],
+        ]);
+    });
+
+    it('allows mixed types in arrays', function () {
+        expect(Toml::parse('mixed = [ "string", 42, 3.14, true ]'))->toBe([
+            'mixed' => ['string', 42, 3.14, true],
+        ]);
+    });
+
+    it('allows mixed types with dates and strings', function () {
+        expect(Toml::parse('data = [ "event", 2024-01-15, 42 ]'))->toBe([
+            'data' => ['event', '2024-01-15', 42],
+        ]);
+    });
+
+    it('allows trailing comma', function () {
+        expect(Toml::parse('numbers = [ 1, 2, 3, ]'))->toBe([
+            'numbers' => [1, 2, 3],
+        ]);
+    });
+
+    it('allows trailing comma with single element', function () {
+        expect(Toml::parse('single = [ 42, ]'))->toBe(['single' => [42]]);
+    });
+
+    it('allows newlines within arrays', function () {
+        $toml = <<<'TOML'
+numbers = [
+    1,
+    2,
+    3
+]
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'numbers' => [1, 2, 3],
+        ]);
+    });
+
+    it('allows newlines with trailing comma', function () {
+        $toml = <<<'TOML'
+numbers = [
+    1,
+    2,
+    3,
+]
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'numbers' => [1, 2, 3],
+        ]);
+    });
+
+    it('allows newlines after opening bracket', function () {
+        $toml = <<<'TOML'
+numbers = [
+1, 2, 3 ]
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'numbers' => [1, 2, 3],
+        ]);
+    });
+
+    it('allows newlines before closing bracket', function () {
+        $toml = <<<'TOML'
+numbers = [ 1, 2, 3
+]
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'numbers' => [1, 2, 3],
+        ]);
+    });
+
+    it('allows multiple newlines between elements', function () {
+        $toml = <<<'TOML'
+numbers = [
+    1,
+
+    2,
+
+    3
+]
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'numbers' => [1, 2, 3],
+        ]);
+    });
+
+    it('parses nested arrays', function () {
+        expect(Toml::parse('nested = [ [ 1, 2 ], [ 3, 4 ] ]'))->toBe([
+            'nested' => [[1, 2], [3, 4]],
+        ]);
+    });
+
+    it('parses deeply nested arrays', function () {
+        expect(Toml::parse('deep = [ [ [ 1 ] ] ]'))->toBe([
+            'deep' => [[[1]]],
+        ]);
+    });
+
+    it('parses nested arrays with different types', function () {
+        expect(Toml::parse('nested = [ [ "a", "b" ], [ 1, 2 ] ]'))->toBe([
+            'nested' => [['a', 'b'], [1, 2]],
+        ]);
+    });
+
+    it('parses nested arrays with newlines', function () {
+        $toml = <<<'TOML'
+matrix = [
+    [ 1, 2, 3 ],
+    [ 4, 5, 6 ],
+    [ 7, 8, 9 ]
+]
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'matrix' => [
+                [1, 2, 3],
+                [4, 5, 6],
+                [7, 8, 9],
+            ],
+        ]);
+    });
+
+    it('parses array of inline tables', function () {
+        expect(Toml::parse('points = [ { x = 1, y = 2 }, { x = 3, y = 4 } ]'))->toBe([
+            'points' => [
+                ['x' => 1, 'y' => 2],
+                ['x' => 3, 'y' => 4],
+            ],
+        ]);
+    });
+
+    it('parses array of inline tables with newlines', function () {
+        $toml = <<<'TOML'
+points = [
+    { x = 1, y = 2 },
+    { x = 3, y = 4 },
+]
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'points' => [
+                ['x' => 1, 'y' => 2],
+                ['x' => 3, 'y' => 4],
+            ],
+        ]);
+    });
+
+    it('parses array of complex inline tables', function () {
+        $toml = 'users = [ { name = "Alice", age = 30 }, { name = "Bob", age = 25 } ]';
+        expect(Toml::parse($toml))->toBe([
+            'users' => [
+                ['name' => 'Alice', 'age' => 30],
+                ['name' => 'Bob', 'age' => 25],
+            ],
+        ]);
+    });
+
+    it('parses array of inline tables with nested values', function () {
+        $toml = 'items = [ { data = { value = 1 } }, { data = { value = 2 } } ]';
+        expect(Toml::parse($toml))->toBe([
+            'items' => [
+                ['data' => ['value' => 1]],
+                ['data' => ['value' => 2]],
+            ],
+        ]);
+    });
+
+    it('allows no whitespace around brackets', function () {
+        expect(Toml::parse('arr=[1,2,3]'))->toBe(['arr' => [1, 2, 3]]);
+    });
+
+    it('allows extra whitespace around elements', function () {
+        expect(Toml::parse('arr = [   1   ,   2   ,   3   ]'))->toBe([
+            'arr' => [1, 2, 3],
+        ]);
+    });
+
+    it('parses array as value in standard table', function () {
+        $toml = <<<'TOML'
+[section]
+items = [ 1, 2, 3 ]
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'section' => ['items' => [1, 2, 3]],
+        ]);
+    });
+
+    it('parses array with dotted key', function () {
+        expect(Toml::parse('data.items = [ 1, 2, 3 ]'))->toBe([
+            'data' => ['items' => [1, 2, 3]],
+        ]);
+    });
+
+    it('parses arrays in real-world TOML example', function () {
+        $toml = <<<'TOML'
+# Configuration file
+name = "My App"
+ports = [ 8001, 8002, 8003 ]
+hosts = [ "alpha", "omega" ]
+
+[database]
+connection_max = 5000
+enabled = true
+
+[servers]
+data = [
+    { name = "alpha", ip = "10.0.0.1" },
+    { name = "beta", ip = "10.0.0.2" },
+]
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'name' => 'My App',
+            'ports' => [8001, 8002, 8003],
+            'hosts' => ['alpha', 'omega'],
+            'database' => [
+                'connection_max' => 5000,
+                'enabled' => true,
+            ],
+            'servers' => [
+                'data' => [
+                    ['name' => 'alpha', 'ip' => '10.0.0.1'],
+                    ['name' => 'beta', 'ip' => '10.0.0.2'],
+                ],
+            ],
+        ]);
+    });
+
+    it('parses array with comments on separate lines', function () {
+        $toml = <<<'TOML'
+numbers = [
+    # First number
+    1,
+    # Second number
+    2,
+    # Third number
+    3
+]
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'numbers' => [1, 2, 3],
+        ]);
+    });
+
+    it('parses array with literal strings', function () {
+        expect(Toml::parse("paths = [ 'C:\\path', 'D:\\other' ]"))->toBe([
+            'paths' => ['C:\\path', 'D:\\other'],
+        ]);
+    });
+
+    it('parses array with multiline strings', function () {
+        $toml = 'texts = [ """line 1""", """line 2""" ]';
+        expect(Toml::parse($toml))->toBe([
+            'texts' => ['line 1', 'line 2'],
+        ]);
+    });
+
+    it('rejects array without closing bracket', function () {
+        Toml::parse('arr = [ 1, 2, 3');
+    })->throws(TomlParseException::class);
+
+    it('rejects array with consecutive commas', function () {
+        Toml::parse('arr = [ 1, , 3 ]');
+    })->throws(TomlParseException::class);
+
+    it('rejects array with only comma', function () {
+        Toml::parse('arr = [ , ]');
+    })->throws(TomlParseException::class);
+});
+
 describe('Toml::parseFile()', function () {
     it('throws TomlParseException when file does not exist', function () {
         Toml::parseFile('/nonexistent/path/to/file.toml');

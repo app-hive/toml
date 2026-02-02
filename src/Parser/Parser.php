@@ -346,6 +346,7 @@ final class Parser
             TokenType::LocalDate,
             TokenType::LocalTime => $this->parseDateTime(),
             TokenType::LeftBrace => $this->parseInlineTable(),
+            TokenType::LeftBracket => $this->parseArray(),
             default => throw new TomlParseException(
                 "Unexpected value type: {$token->type->value}",
                 $token->line,
@@ -615,6 +616,74 @@ final class Parser
      * Skip whitespace and newlines within inline tables (TOML 1.1.0 feature).
      */
     private function skipInlineTableWhitespace(): void
+    {
+        while (! $this->isAtEnd() && $this->check(TokenType::Newline)) {
+            $this->advance();
+        }
+    }
+
+    /**
+     * Parse an array: [ value, value, ... ]
+     * TOML allows mixed types in arrays.
+     * TOML 1.1.0 allows trailing commas and newlines within arrays.
+     *
+     * @return list<mixed>
+     */
+    private function parseArray(): array
+    {
+        $startToken = $this->advance(); // consume '['
+        $result = [];
+
+        // Skip any whitespace and newlines after opening bracket
+        $this->skipArrayWhitespace();
+
+        // Check for empty array
+        if ($this->check(TokenType::RightBracket)) {
+            $this->advance();
+
+            return $result;
+        }
+
+        // Parse array elements
+        while (true) {
+            $value = $this->parseValue();
+            $result[] = $value;
+
+            // Skip whitespace and newlines after value
+            $this->skipArrayWhitespace();
+
+            // Check for comma or closing bracket
+            if ($this->check(TokenType::Comma)) {
+                $this->advance(); // consume comma
+                // Skip whitespace and newlines after comma
+                $this->skipArrayWhitespace();
+
+                // Allow trailing comma
+                if ($this->check(TokenType::RightBracket)) {
+                    $this->advance();
+
+                    return $result;
+                }
+            } elseif ($this->check(TokenType::RightBracket)) {
+                $this->advance();
+
+                return $result;
+            } else {
+                $token = $this->peek();
+                throw new TomlParseException(
+                    "Expected ',' or ']' in array, got {$token->type->value}",
+                    $token->line,
+                    $token->column,
+                    $this->source
+                );
+            }
+        }
+    }
+
+    /**
+     * Skip whitespace and newlines within arrays (TOML 1.1.0 feature).
+     */
+    private function skipArrayWhitespace(): void
     {
         while (! $this->isAtEnd() && $this->check(TokenType::Newline)) {
             $this->advance();
