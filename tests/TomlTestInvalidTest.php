@@ -19,13 +19,8 @@ use AppHive\Toml\Toml;
  * - Unicode escapes: Parser doesn't validate all unicode escape sequences
  */
 const KNOWN_INVALID_FAILURES = [
-    // Control character validation - parser doesn't reject invalid control chars in comments
+    // Control character validation - parser doesn't reject all invalid control chars
     'control / bare-cr',
-    'control / comment-del',
-    'control / comment-ff',
-    'control / comment-lf',
-    'control / comment-null',
-    'control / comment-us',
     // Multiline string CR handling - bare CR in multiline strings is treated as newline
     'control / multi-cr',
     'control / rawmulti-cr',

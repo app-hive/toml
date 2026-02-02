@@ -982,7 +982,25 @@ final class Lexer
     {
         // Consume the '#' and everything until end of line
         while (! $this->isAtEnd() && $this->peek() !== "\n" && $this->peek() !== "\r") {
+            $char = $this->peek();
+            assert($char !== null);
+            $this->validateCommentControlCharacter($char);
             $this->advance();
+        }
+    }
+
+    private function validateCommentControlCharacter(string $char): void
+    {
+        $ord = ord($char);
+        // Control characters U+0000 to U+001F are not allowed, except tab (U+0009)
+        // Also U+007F (DEL) is not allowed
+        if (($ord <= 0x1F && $ord !== 0x09) || $ord === 0x7F) {
+            throw new TomlParseException(
+                sprintf('Control character U+%04X is not allowed in comments', $ord),
+                $this->line,
+                $this->column,
+                $this->source
+            );
         }
     }
 
