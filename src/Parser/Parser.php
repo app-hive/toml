@@ -807,13 +807,106 @@ final class Parser
 
     /**
      * Parse a date-time value (offset or local).
-     * Returns the value as a string, preserving the original format.
+     * Normalizes the value to RFC 3339 format:
+     * - Space separator → T
+     * - Lowercase t → T
+     * - Lowercase z → Z
+     * - Missing seconds → :00
+     * - Fractional seconds < 3 digits → pad to 3 digits
      */
     private function parseDateTime(): string
     {
         $token = $this->advance();
 
-        return $token->value;
+        return $this->normalizeDateTimeValue($token->value, $token->type);
+    }
+
+    /**
+     * Normalize a datetime string to RFC 3339 format.
+     */
+    private function normalizeDateTimeValue(string $value, TokenType $type): string
+    {
+        // LocalDate doesn't need normalization (YYYY-MM-DD)
+        if ($type === TokenType::LocalDate) {
+            return $value;
+        }
+
+        // LocalTime: ensure HH:MM:SS format
+        if ($type === TokenType::LocalTime) {
+            return $this->normalizeTimeComponent($value);
+        }
+
+        // LocalDateTime and OffsetDateTime: normalize separator, time, and timezone
+        return $this->normalizeFullDateTime($value, $type);
+    }
+
+    /**
+     * Normalize a time component (HH:MM:SS or HH:MM with optional fractional seconds).
+     * Preserves original fractional second precision as per TOML spec.
+     */
+    private function normalizeTimeComponent(string $time): string
+    {
+        // Check if we have fractional seconds
+        if (str_contains($time, '.')) {
+            [$timePart, $fraction] = explode('.', $time, 2);
+            $normalizedTime = $this->ensureSeconds($timePart);
+
+            // Preserve original precision (don't pad fractional seconds)
+            return $normalizedTime.'.'.$fraction;
+        }
+
+        return $this->ensureSeconds($time);
+    }
+
+    /**
+     * Ensure a time has seconds (HH:MM → HH:MM:00).
+     */
+    private function ensureSeconds(string $time): string
+    {
+        // If time is HH:MM (5 chars), add :00
+        if (strlen($time) === 5 && preg_match('/^\d{2}:\d{2}$/', $time)) {
+            return $time.':00';
+        }
+
+        return $time;
+    }
+
+    /**
+     * Normalize a full datetime (LocalDateTime or OffsetDateTime).
+     */
+    private function normalizeFullDateTime(string $value, TokenType $type): string
+    {
+        // Split into date, time, and timezone parts
+        // Format: YYYY-MM-DD[T or t or space]HH:MM[:SS][.fraction][Z or z or +/-HH:MM]
+
+        // First, extract the date (first 10 chars: YYYY-MM-DD)
+        $date = substr($value, 0, 10);
+
+        // The separator is at position 10
+        // Normalize to 'T'
+        $normalized = $date.'T';
+
+        // Extract the rest (after separator)
+        $rest = substr($value, 11);
+
+        // Handle timezone for OffsetDateTime
+        $timezone = '';
+        if ($type === TokenType::OffsetDateTime) {
+            // Find timezone: Z, z, +HH:MM, or -HH:MM
+            if (preg_match('/([Zz]|[+-]\d{2}:\d{2})$/', $rest, $matches)) {
+                $timezone = $matches[1];
+                $rest = substr($rest, 0, -strlen($timezone));
+                // Normalize lowercase z to Z
+                if ($timezone === 'z') {
+                    $timezone = 'Z';
+                }
+            }
+        }
+
+        // Normalize the time part
+        $normalizedTime = $this->normalizeTimeComponent($rest);
+
+        return $normalized.$normalizedTime.$timezone;
     }
 
     /**

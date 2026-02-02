@@ -78,6 +78,7 @@ const KNOWN_INVALID_FAILURES = [
     'datetime / minute-over',
     'datetime / month-over',
     'datetime / month-under',
+    'datetime / no-secs', // TOML 1.1.0 allows optional seconds
     'datetime / offset-minus-minute-1digit',
     'datetime / offset-minus-no-hour-minute',
     'datetime / offset-minus-no-hour-minute-sep',
@@ -105,9 +106,11 @@ const KNOWN_INVALID_FAILURES = [
     'local-datetime / minute-over',
     'local-datetime / month-over',
     'local-datetime / month-under',
+    'local-datetime / no-secs', // TOML 1.1.0 allows optional seconds
     'local-datetime / second-over',
     'local-time / hour-over',
     'local-time / minute-over',
+    'local-time / no-secs', // TOML 1.1.0 allows optional seconds
     'local-time / second-over',
 
     // Encoding validation - parser doesn't validate UTF-8

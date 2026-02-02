@@ -33,14 +33,11 @@ const KNOWN_VALID_FAILURES = [
     'table / names',
     'table / names-with-values',
 
-    // Datetime normalization - parser doesn't normalize formats
-    'datetime / datetime',
-    'datetime / edge',
-    'datetime / leap-year',
-    'datetime / local',
+    // Datetime tests with numeric bare keys (not datetime normalization issues)
+    'datetime / leap-year', // Uses keys like "2000-datetime" which are numeric bare keys
+
+    // Datetime fractional second padding - test expects padding but we preserve precision
     'datetime / milliseconds',
-    'datetime / no-seconds',
-    'spec-1.0.0 / offset-date-time-1',
 
     // Multiline string handling
     'string / ends-in-whitespace-escape',

@@ -1060,8 +1060,8 @@ TOML;
             expect(Toml::parse('odt3 = 1979-05-27T07:32:00+09:00'))->toBe(['odt3' => '1979-05-27T07:32:00+09:00']);
         });
 
-        it('allows space instead of T separator', function () {
-            expect(Toml::parse('odt4 = 1979-05-27 07:32:00Z'))->toBe(['odt4' => '1979-05-27 07:32:00Z']);
+        it('normalizes space separator to T', function () {
+            expect(Toml::parse('odt4 = 1979-05-27 07:32:00Z'))->toBe(['odt4' => '1979-05-27T07:32:00Z']);
         });
 
         it('supports fractional seconds', function () {
@@ -1072,12 +1072,12 @@ TOML;
             expect(Toml::parse('odt6 = 1979-05-27T00:32:00.999999-07:00'))->toBe(['odt6' => '1979-05-27T00:32:00.999999-07:00']);
         });
 
-        it('preserves lowercase z suffix', function () {
-            expect(Toml::parse('odt7 = 1979-05-27T07:32:00z'))->toBe(['odt7' => '1979-05-27T07:32:00z']);
+        it('normalizes lowercase z suffix to uppercase Z', function () {
+            expect(Toml::parse('odt7 = 1979-05-27T07:32:00z'))->toBe(['odt7' => '1979-05-27T07:32:00Z']);
         });
 
-        it('preserves lowercase t separator', function () {
-            expect(Toml::parse('odt8 = 1979-05-27t07:32:00Z'))->toBe(['odt8' => '1979-05-27t07:32:00Z']);
+        it('normalizes lowercase t separator to uppercase T', function () {
+            expect(Toml::parse('odt8 = 1979-05-27t07:32:00Z'))->toBe(['odt8' => '1979-05-27T07:32:00Z']);
         });
 
         it('parses multiple offset date-time key-value pairs', function () {
@@ -1122,16 +1122,16 @@ TOML;
             expect(Toml::parse('ldt2 = 1979-05-27T00:32:00.999999'))->toBe(['ldt2' => '1979-05-27T00:32:00.999999']);
         });
 
-        it('allows space instead of T separator', function () {
-            expect(Toml::parse('ldt3 = 1979-05-27 07:32:00'))->toBe(['ldt3' => '1979-05-27 07:32:00']);
+        it('normalizes space separator to T', function () {
+            expect(Toml::parse('ldt3 = 1979-05-27 07:32:00'))->toBe(['ldt3' => '1979-05-27T07:32:00']);
         });
 
-        it('supports fractional seconds with space separator', function () {
-            expect(Toml::parse('ldt4 = 1979-05-27 00:32:00.999999'))->toBe(['ldt4' => '1979-05-27 00:32:00.999999']);
+        it('supports fractional seconds with space separator (normalized)', function () {
+            expect(Toml::parse('ldt4 = 1979-05-27 00:32:00.999999'))->toBe(['ldt4' => '1979-05-27T00:32:00.999999']);
         });
 
-        it('preserves lowercase t separator', function () {
-            expect(Toml::parse('ldt5 = 1979-05-27t07:32:00'))->toBe(['ldt5' => '1979-05-27t07:32:00']);
+        it('normalizes lowercase t separator to uppercase T', function () {
+            expect(Toml::parse('ldt5 = 1979-05-27t07:32:00'))->toBe(['ldt5' => '1979-05-27T07:32:00']);
         });
 
         it('parses multiple local date-time key-value pairs', function () {
@@ -1157,7 +1157,7 @@ TOML;
             $result = Toml::parse($toml);
             expect($result['meeting_start'])->toBe('2023-06-15T09:00:00');
             expect($result['meeting_end'])->toBe('2023-06-15T17:00:00');
-            expect($result['deadline'])->toBe('2023-06-15 23:59:59');
+            expect($result['deadline'])->toBe('2023-06-15T23:59:59'); // normalized
             expect($result['precise_time'])->toBe('2023-06-15T13:00:00.123456');
         });
 

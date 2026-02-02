@@ -536,15 +536,20 @@ final class Lexer
             $timePattern .= $char;
         }
 
-        // Check for local time: HH:MM:SS or HH:MM:SS.fraction
-        if (preg_match('/^(\d{2}:\d{2}:\d{2}(?:\.\d+)?)/', $timePattern, $matches)) {
-            // Make sure it's not part of a date (check if preceded by date separator)
-            // Local time is only valid if:
-            // 1. It's at position 0 (start of input)
-            // 2. Or the previous non-whitespace char is '=' (value position)
-            // But actually in TOML, bare times like 07:32:00 are valid values
-            // We just need to make sure the 3rd char is ':' not '-' to distinguish from dates
-            if ($this->lookAhead(2) === ':') {
+        // Check for local time: HH:MM:SS, HH:MM:SS.fraction, or HH:MM (no seconds)
+        // We need to check for the 3rd char being ':' to distinguish from dates (YYYY-...)
+        if ($this->lookAhead(2) === ':') {
+            // Match HH:MM:SS or HH:MM:SS.fraction first (with seconds)
+            if (preg_match('/^(\d{2}:\d{2}:\d{2}(?:\.\d+)?)/', $timePattern, $matches)) {
+                $timeValue = $matches[1];
+                for ($i = 0; $i < strlen($timeValue); $i++) {
+                    $this->advance();
+                }
+
+                return new Token(TokenType::LocalTime, $timeValue, $line, $column);
+            }
+            // Match HH:MM (without seconds) - TOML 1.1.0
+            if (preg_match('/^(\d{2}:\d{2})(?![:\d])/', $timePattern, $matches)) {
                 $timeValue = $matches[1];
                 for ($i = 0; $i < strlen($timeValue); $i++) {
                     $this->advance();
@@ -589,7 +594,7 @@ final class Lexer
             $separator = $this->advance();
             $value .= $separator;
 
-            // Parse time: HH:MM:SS
+            // Parse time: HH:MM:SS or HH:MM (without seconds)
             $timePattern = '';
             for ($i = 0; $i < 8; $i++) {
                 $char = $this->peek();
@@ -599,7 +604,8 @@ final class Lexer
                 $timePattern .= $this->advance();
             }
 
-            if (! preg_match('/^\d{2}:\d{2}:\d{2}$/', $timePattern)) {
+            // Accept HH:MM:SS or HH:MM (TOML 1.1.0 allows omitting seconds)
+            if (! preg_match('/^\d{2}:\d{2}(:\d{2})?$/', $timePattern)) {
                 // Restore position and return null for invalid time
                 $this->position = $savedPosition;
                 $this->line = $savedLine;
@@ -615,7 +621,7 @@ final class Lexer
             $separator = $this->advance();
             $value .= $separator;
 
-            // Parse time: HH:MM:SS
+            // Parse time: HH:MM:SS or HH:MM (without seconds)
             $timePattern = '';
             for ($i = 0; $i < 8; $i++) {
                 $char = $this->peek();
@@ -625,7 +631,8 @@ final class Lexer
                 $timePattern .= $this->advance();
             }
 
-            if (! preg_match('/^\d{2}:\d{2}:\d{2}$/', $timePattern)) {
+            // Accept HH:MM:SS or HH:MM (TOML 1.1.0 allows omitting seconds)
+            if (! preg_match('/^\d{2}:\d{2}(:\d{2})?$/', $timePattern)) {
                 // Not a valid datetime, restore to after the date and return as LocalDate
                 // We need to "unadvance" by the separator and failed time pattern
                 $this->position -= strlen($timePattern) + 1;
