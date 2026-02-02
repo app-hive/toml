@@ -15,7 +15,6 @@ use AppHive\Toml\Toml;
  * - Float validation: Parser doesn't reject all invalid underscore positions in floats
  * - Integer validation: Parser doesn't reject all invalid integer formats
  * - Array/table semantics: Parser doesn't catch all invalid array/table combinations
- * - Encoding validation: Parser doesn't validate UTF-8 encoding
  * - Unicode escapes: Parser doesn't validate all unicode escape sequences
  */
 const KNOWN_INVALID_FAILURES = [
@@ -96,14 +95,6 @@ const KNOWN_INVALID_FAILURES = [
     'local-time / minute-over',
     'local-time / no-secs', // TOML 1.1.0 allows optional seconds
     'local-time / second-over',
-
-    // Encoding validation - parser doesn't validate UTF-8
-    'encoding / bad-codepoint',
-    'encoding / bad-utf8-in-comment',
-    'encoding / bad-utf8-in-multiline',
-    'encoding / bad-utf8-in-multiline-literal',
-    'encoding / bad-utf8-in-string',
-    'encoding / bad-utf8-in-string-literal',
 
     // Float validation - parser doesn't reject all invalid underscore positions
     'float / exp-double-us',
