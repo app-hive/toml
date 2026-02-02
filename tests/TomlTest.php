@@ -667,6 +667,73 @@ TOML;
         });
     });
 
+    describe('numeric keys', function () {
+        it('parses integer bare keys', function () {
+            expect(Toml::parse('1 = true'))->toBe(['1' => true]);
+        });
+
+        it('parses integer bare keys as string keys', function () {
+            expect(Toml::parse('1234 = "value"'))->toBe(['1234' => 'value']);
+        });
+
+        it('parses numeric dotted keys as nested structure', function () {
+            // 1.2 in key position is a dotted key, not a float
+            expect(Toml::parse('1.2 = true'))->toBe([
+                '1' => ['2' => true],
+            ]);
+        });
+
+        it('parses bare keys with leading zeros', function () {
+            // Leading zeros are valid in bare keys (treated as string, not integer)
+            expect(Toml::parse('0123 = true'))->toBe(['0123' => true]);
+        });
+
+        it('parses numeric dotted keys with leading zeros', function () {
+            expect(Toml::parse('01.23 = true'))->toBe([
+                '01' => ['23' => true],
+            ]);
+        });
+
+        it('parses negative numeric bare keys', function () {
+            expect(Toml::parse('-1 = true'))->toBe(['-1' => true]);
+        });
+
+        it('parses negative numeric bare keys with leading zeros', function () {
+            expect(Toml::parse('-01 = true'))->toBe(['-01' => true]);
+        });
+
+        it('distinguishes 1 and 01 as different keys', function () {
+            $toml = <<<'TOML'
+1  = 'one'
+01 = 'zero one'
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                '1' => 'one',
+                '01' => 'zero one',
+            ]);
+        });
+
+        it('parses numeric keys in table headers', function () {
+            $toml = <<<'TOML'
+[1]
+name = "first"
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                '1' => ['name' => 'first'],
+            ]);
+        });
+
+        it('parses numeric dotted keys in table headers', function () {
+            $toml = <<<'TOML'
+[1.2]
+value = true
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                '1' => ['2' => ['value' => true]],
+            ]);
+        });
+    });
+
     describe('multi-line basic strings', function () {
         it('parses simple multi-line basic string with triple double quotes', function () {
             $toml = 'str = """hello world"""';

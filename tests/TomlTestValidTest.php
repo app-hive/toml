@@ -17,17 +17,9 @@ use AppHive\Toml\Toml;
  * - Newlines in inline tables: TOML 1.1.0 allows newlines in inline tables
  */
 const KNOWN_VALID_FAILURES = [
-    // Numeric bare keys - parser treats numbers as INTEGER tokens, not keys
+    // Numeric bare keys - some tests still need work (date-like keys, special words, etc.)
     'key / alphanum',
     'key / like-date',
-    'key / numeric-01',
-    'key / numeric-02',
-    'key / numeric-03',
-    'key / numeric-04',
-    'key / numeric-05',
-    'key / numeric-06',
-    'key / numeric-07',
-    'key / numeric-08',
     'key / special-word',
     'key / start',
     'key / zero',
@@ -248,8 +240,9 @@ function normalizeForComparison(mixed $value): mixed
         $normalized = array_map('normalizeForComparison', $value);
 
         // Sort by keys if it's an associative array (not a list)
+        // Use SORT_STRING to ensure consistent sorting of mixed int/string keys
         if (! array_is_list($normalized)) {
-            ksort($normalized);
+            ksort($normalized, SORT_STRING);
         }
 
         return $normalized;

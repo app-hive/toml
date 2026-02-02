@@ -86,7 +86,7 @@ final class Parser
             }
 
             // Parse key-value pair
-            if ($this->check(TokenType::BareKey) || $this->check(TokenType::BasicString) || $this->check(TokenType::LiteralString)) {
+            if ($this->isKeyToken()) {
                 $this->parseKeyValue($result);
             } else {
                 $token = $this->peek();
@@ -441,23 +441,52 @@ final class Parser
     /**
      * Parse a dotted key (e.g., "physical.color" or "site.'google.com'").
      *
+     * Float tokens like "1.2" are treated as dotted keys "1"."2" in key context.
+     *
      * @return list<string>
      */
     private function parseDottedKey(): array
     {
         $parts = [];
-        $parts[] = $this->parseSimpleKey();
+
+        // Handle first key part - may be a Float which needs splitting
+        $this->parseKeyParts($parts);
 
         while ($this->check(TokenType::Dot)) {
             $this->advance(); // consume the dot
-            $parts[] = $this->parseSimpleKey();
+            $this->parseKeyParts($parts);
         }
 
         return $parts;
     }
 
     /**
-     * Parse a simple key (bare key or quoted string).
+     * Parse key parts and add them to the parts array.
+     * Float tokens are split by '.' into multiple key parts.
+     *
+     * @param  list<string>  $parts
+     */
+    private function parseKeyParts(array &$parts): void
+    {
+        $token = $this->peek();
+
+        // Float tokens in key context are dotted keys (e.g., "1.2" = "1"."2")
+        if ($token->type === TokenType::Float) {
+            $this->advance();
+            $floatParts = explode('.', $token->value);
+            foreach ($floatParts as $part) {
+                $parts[] = $part;
+            }
+
+            return;
+        }
+
+        $parts[] = $this->parseSimpleKey();
+    }
+
+    /**
+     * Parse a simple key (bare key, quoted string, or numeric value).
+     * Numeric values are allowed as bare keys in TOML and are stored as strings.
      */
     private function parseSimpleKey(): string
     {
@@ -470,6 +499,14 @@ final class Parser
         }
 
         if ($token->type === TokenType::BasicString || $token->type === TokenType::LiteralString) {
+            $this->advance();
+
+            return $token->value;
+        }
+
+        // Numeric tokens (Integer, Float) are valid as bare keys
+        // They are stored as strings, preserving the original representation
+        if ($token->type === TokenType::Integer || $token->type === TokenType::Float) {
             $this->advance();
 
             return $token->value;
@@ -1039,6 +1076,21 @@ final class Parser
         while (! $this->isAtEnd() && $this->check(TokenType::Newline)) {
             $this->advance();
         }
+    }
+
+    /**
+     * Check if the current token can be used as a key.
+     * In TOML, keys can be bare keys, quoted strings, or numeric values.
+     */
+    private function isKeyToken(): bool
+    {
+        $type = $this->peek()->type;
+
+        return $type === TokenType::BareKey
+            || $type === TokenType::BasicString
+            || $type === TokenType::LiteralString
+            || $type === TokenType::Integer
+            || $type === TokenType::Float;
     }
 
     /**
