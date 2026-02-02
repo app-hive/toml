@@ -3,3 +3,4 @@
 /.phpstan-cache/
 .phpunit.result.cache
 .DS_Store
+/tests/toml-test/
