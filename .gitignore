@@ -1,1 +1,5 @@
 /vendor/
+/composer.lock
+/.phpstan-cache/
+.phpunit.result.cache
+.DS_Store
