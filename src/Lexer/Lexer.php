@@ -922,6 +922,17 @@ final class Lexer
             if ($signChar === '+' || $signChar === '-') {
                 $value .= $this->advance();
             }
+
+            // Exponent must have at least one digit
+            if (! $this->isDigit($this->peek())) {
+                throw new TomlParseException(
+                    'Exponent requires at least one digit',
+                    $line,
+                    $this->column,
+                    $this->source
+                );
+            }
+
             $value .= $this->scanDigits($line, $column);
         }
 

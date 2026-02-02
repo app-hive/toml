@@ -96,31 +96,6 @@ const KNOWN_INVALID_FAILURES = [
     'local-time / no-secs', // TOML 1.1.0 allows optional seconds
     'local-time / second-over',
 
-    // Float validation - parser doesn't reject all invalid underscore positions
-    'float / exp-double-us',
-    'float / exp-leading-us',
-    'float / exp-trailing-us',
-    'float / exp-trailing-us-01',
-    'float / exp-trailing-us-02',
-    'float / float / exp-double-us',
-    'float / float / exp-leading-us',
-    'float / float / exp-trailing-us',
-    'float / float / exp-trailing-us-01',
-    'float / float / exp-trailing-us-02',
-    'float / float / trailing-exp',
-    'float / float / trailing-exp-minus',
-    'float / float / trailing-exp-plus',
-    'float / float / trailing-us',
-    'float / float / us-before-dot',
-    'float / trailing-exp',
-    'float / trailing-exp-minus',
-    'float / trailing-exp-plus',
-    'float / trailing-us',
-    'float / trailing-us-exp-01',
-    'float / trailing-us-exp-02',
-    'float / us-before-dot',
-
-
     // Inline table validation
     'inline-table / duplicate-key-03',
     'inline-table / linebreak-01',
