@@ -56,6 +56,15 @@ final class Parser
     private array $arrayOfTablesPaths = [];
 
     /**
+     * Track paths defined within inline tables (including the inline table itself).
+     * These are immutable and cannot be extended by table headers or dotted keys.
+     * Keys are dot-joined paths.
+     *
+     * @var array<string, bool>
+     */
+    private array $inlineTablePaths = [];
+
+    /**
      * Create a new parser instance.
      *
      * @param  string  $source  The TOML source to parse
@@ -197,8 +206,12 @@ final class Parser
     private function parseKeyValue(array &$result): void
     {
         $keyParts = $this->parseDottedKey();
+        $keyToken = $this->peek(); // For error reporting
 
         $this->expect(TokenType::Equals);
+
+        // Check if the value is an inline table (starts with '{')
+        $isInlineTable = $this->check(TokenType::LeftBrace);
 
         $value = $this->parseValue();
 
@@ -210,7 +223,16 @@ final class Parser
             $this->trackDottedKeyTables($keyParts);
         }
 
+        // Check if we're trying to extend an inline table
+        $this->checkInlineTableImmutability($fullKeyParts, $keyToken);
+
         $this->setNestedValue($result, $fullKeyParts, $value);
+
+        // If the value is an inline table, track it and all its nested paths as immutable
+        // We check $isInlineTable to handle empty inline tables {} which appear as empty arrays
+        if ($isInlineTable) {
+            $this->trackInlineTablePaths($fullKeyParts, is_array($value) ? $value : []);
+        }
 
         // Expect newline or EOF after value
         if (! $this->isAtEnd() && ! $this->check(TokenType::Newline)) {
@@ -299,8 +321,16 @@ final class Parser
             return;
         }
 
+        // Check if this path or any parent path is within an inline table (immutable)
+        $this->checkInlineTableImmutability($keyParts, $startToken);
+
         // Mark this path as an array of tables
         $this->arrayOfTablesPaths[$tablePath] = true;
+
+        // Clear inline table paths that are within this array of tables.
+        // When we add a new element to the array, any inline tables defined in
+        // previous elements don't apply to the new element.
+        $this->clearInlineTablePathsUnder($tablePath);
 
         // Add a new element to the array
         $this->addArrayOfTablesElement($result, $keyParts, $startToken);
@@ -308,6 +338,20 @@ final class Parser
         // Set current table path for subsequent key-value pairs
         // For array of tables, we point to the current element
         $this->currentTablePath = $keyParts;
+    }
+
+    /**
+     * Clear inline table paths that are under a given array of tables path.
+     * Called when a new element is added to an array of tables.
+     */
+    private function clearInlineTablePathsUnder(string $arrayPath): void
+    {
+        $prefix = $arrayPath.'.';
+        foreach (array_keys($this->inlineTablePaths) as $path) {
+            if (str_starts_with($path, $prefix)) {
+                unset($this->inlineTablePaths[$path]);
+            }
+        }
     }
 
     /**
@@ -448,6 +492,9 @@ final class Parser
             // In lenient mode, continue adding to the same table
         }
 
+        // Check if this path or any parent path is within an inline table (immutable)
+        $this->checkInlineTableImmutability($keyParts, $startToken);
+
         // Mark this table as explicitly defined
         $this->definedTables[$tablePath] = true;
 
@@ -528,6 +575,64 @@ final class Parser
             $basePath[] = $keyParts[$i];
             $pathStr = implode('.', $basePath);
             $this->implicitDottedKeyTables[$pathStr] = true;
+        }
+    }
+
+    /**
+     * Check if any prefix of the key path is within an inline table.
+     * Inline tables are immutable and cannot be extended.
+     *
+     * @param  list<string>  $keyParts
+     *
+     * @throws TomlParseException If the path violates inline table immutability
+     */
+    private function checkInlineTableImmutability(array $keyParts, Token $token): void
+    {
+        // Check each prefix path to see if any parent is an inline table
+        for ($i = 1; $i <= count($keyParts); $i++) {
+            $partialPath = implode('.', array_slice($keyParts, 0, $i));
+
+            if (isset($this->inlineTablePaths[$partialPath])) {
+                throw new TomlParseException(
+                    "Cannot extend inline table '{$partialPath}' - inline tables are immutable",
+                    $token->line,
+                    $token->column,
+                    $this->source
+                );
+            }
+        }
+    }
+
+    /**
+     * Track an inline table and all its nested paths as immutable.
+     *
+     * @param  list<string>  $keyParts  The full key path to the inline table
+     * @param  array<int|string, mixed>  $table  The inline table value
+     */
+    private function trackInlineTablePaths(array $keyParts, array $table): void
+    {
+        $basePath = implode('.', $keyParts);
+        $this->inlineTablePaths[$basePath] = true;
+
+        // Recursively track all nested paths
+        $this->trackNestedInlineTablePaths($table, $basePath);
+    }
+
+    /**
+     * Recursively track nested paths within an inline table.
+     *
+     * @param  array<int|string, mixed>  $table
+     */
+    private function trackNestedInlineTablePaths(array $table, string $basePath): void
+    {
+        foreach ($table as $key => $value) {
+            $fullPath = $basePath.'.'.$key;
+            $this->inlineTablePaths[$fullPath] = true;
+
+            if (is_array($value) && ! array_is_list($value)) {
+                /** @var array<int|string, mixed> $value */
+                $this->trackNestedInlineTablePaths($value, $fullPath);
+            }
         }
     }
 
@@ -1019,6 +1124,10 @@ final class Parser
         $startToken = $this->advance(); // consume '{'
         $result = [];
 
+        // Track immutable paths within this inline table (inline subtables and their implicit paths)
+        /** @var array<string, bool> $immutablePaths */
+        $immutablePaths = [];
+
         // Skip any whitespace and newlines after opening brace (TOML 1.1.0)
         $this->skipInlineTableWhitespace();
 
@@ -1039,7 +1148,7 @@ final class Parser
             $value = $this->parseValue();
 
             // Set the value in the result, handling dotted keys
-            $this->setInlineTableValue($result, $keyParts, $value, $startToken);
+            $this->setInlineTableValue($result, $keyParts, $value, $startToken, $immutablePaths);
 
             // Skip whitespace and newlines after value (TOML 1.1.0)
             $this->skipInlineTableWhitespace();
@@ -1155,12 +1264,27 @@ final class Parser
      *
      * @param  array<string, mixed>  $array
      * @param  list<string>  $keyParts
+     * @param  array<string, bool>  $immutablePaths  Paths that are immutable within this inline table (passed by reference)
      *
      * @throws TomlParseException
      */
-    private function setInlineTableValue(array &$array, array $keyParts, mixed $value, Token $startToken): void
+    private function setInlineTableValue(array &$array, array $keyParts, mixed $value, Token $startToken, array &$immutablePaths = []): void
     {
         $current = &$array;
+
+        // Check if any prefix path is immutable (defined as inline table or within one)
+        for ($i = 1; $i <= count($keyParts); $i++) {
+            $partialPath = implode('.', array_slice($keyParts, 0, $i));
+
+            if (isset($immutablePaths[$partialPath])) {
+                throw new TomlParseException(
+                    "Cannot extend value '{$partialPath}' - inline tables are immutable",
+                    $startToken->line,
+                    $startToken->column,
+                    $this->source
+                );
+            }
+        }
 
         // Navigate/create intermediate tables
         for ($i = 0; $i < count($keyParts) - 1; $i++) {
@@ -1195,6 +1319,40 @@ final class Parser
         }
 
         $current[$finalKey] = $value;
+
+        // If the value is an inline table (array with string keys), mark it and its implicit paths as immutable
+        if (is_array($value)) {
+            $fullPath = implode('.', $keyParts);
+            $immutablePaths[$fullPath] = true;
+
+            // Also mark all intermediate paths from dotted keys as immutable
+            for ($i = 0; $i < count($keyParts) - 1; $i++) {
+                $partialPath = implode('.', array_slice($keyParts, 0, $i + 1));
+                $immutablePaths[$partialPath] = true;
+            }
+
+            // Recursively mark all nested paths within the inline table as immutable
+            $this->markNestedPathsImmutable($value, $fullPath, $immutablePaths);
+        }
+    }
+
+    /**
+     * Recursively mark all nested paths within an inline table as immutable.
+     *
+     * @param  array<int|string, mixed>  $table
+     * @param  array<string, bool>  $immutablePaths
+     */
+    private function markNestedPathsImmutable(array $table, string $basePath, array &$immutablePaths): void
+    {
+        foreach ($table as $key => $value) {
+            $fullPath = $basePath.'.'.$key;
+            $immutablePaths[$fullPath] = true;
+
+            if (is_array($value) && ! array_is_list($value)) {
+                /** @var array<int|string, mixed> $value */
+                $this->markNestedPathsImmutable($value, $fullPath, $immutablePaths);
+            }
+        }
     }
 
     /**

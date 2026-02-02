@@ -56,18 +56,12 @@ const KNOWN_INVALID_FAILURES = [
     'local-datetime / no-secs', // TOML 1.1.0 allows optional seconds
     'local-time / no-secs', // TOML 1.1.0 allows optional seconds
 
-    // Inline table validation
-    'inline-table / duplicate-key-03',
-    'inline-table / linebreak-01',
-    'inline-table / linebreak-02',
-    'inline-table / linebreak-03',
-    'inline-table / linebreak-04',
-    'inline-table / overwrite-02',
-    'inline-table / overwrite-04',
-    'inline-table / overwrite-05',
-    'inline-table / overwrite-07',
-    'inline-table / overwrite-08',
-    'inline-table / trailing-comma',
+    // Inline table validation - TOML 1.1.0 allows newlines and trailing commas in inline tables
+    'inline-table / linebreak-01', // Valid in TOML 1.1.0
+    'inline-table / linebreak-02', // Valid in TOML 1.1.0
+    'inline-table / linebreak-03', // Valid in TOML 1.1.0
+    'inline-table / linebreak-04', // Valid in TOML 1.1.0
+    'inline-table / trailing-comma', // Valid in TOML 1.1.0
 
     // Array/table semantic validation
     'array / extend-defined-aot',
