@@ -135,6 +135,60 @@ TOML;
         });
     });
 
+    describe('booleans', function () {
+        it('parses true as PHP true', function () {
+            expect(Toml::parse('enabled = true'))->toBe(['enabled' => true]);
+        });
+
+        it('parses false as PHP false', function () {
+            expect(Toml::parse('disabled = false'))->toBe(['disabled' => false]);
+        });
+
+        it('is case sensitive - rejects capitalized True', function () {
+            Toml::parse('invalid = True');
+        })->throws(TomlParseException::class);
+
+        it('is case sensitive - rejects uppercase TRUE', function () {
+            Toml::parse('invalid = TRUE');
+        })->throws(TomlParseException::class);
+
+        it('is case sensitive - rejects capitalized False', function () {
+            Toml::parse('invalid = False');
+        })->throws(TomlParseException::class);
+
+        it('is case sensitive - rejects uppercase FALSE', function () {
+            Toml::parse('invalid = FALSE');
+        })->throws(TomlParseException::class);
+
+        it('parses multiple boolean key-value pairs', function () {
+            $toml = <<<'TOML'
+a = true
+b = false
+c = true
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'a' => true,
+                'b' => false,
+                'c' => true,
+            ]);
+        });
+
+        it('parses booleans in real-world TOML example', function () {
+            $toml = <<<'TOML'
+debug = false
+verbose = true
+enable_logging = true
+dry_run = false
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'debug' => false,
+                'verbose' => true,
+                'enable_logging' => true,
+                'dry_run' => false,
+            ]);
+        });
+    });
+
     describe('floats', function () {
         it('parses simple decimal floats', function () {
             expect(Toml::parse('pi = 3.14'))->toBe(['pi' => 3.14]);

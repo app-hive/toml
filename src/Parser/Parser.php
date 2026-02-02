@@ -61,7 +61,7 @@ final class Parser
     /**
      * Parse a key-value pair and add it to the result array.
      *
-     * @param array<string, mixed> $result
+     * @param  array<string, mixed>  $result
      */
     private function parseKeyValue(array &$result): void
     {
@@ -77,7 +77,7 @@ final class Parser
         if (! $this->isAtEnd() && ! $this->check(TokenType::Newline)) {
             $token = $this->peek();
             throw new TomlParseException(
-                "Expected newline after value",
+                'Expected newline after value',
                 $token->line,
                 $token->column,
                 $this->source
@@ -124,6 +124,7 @@ final class Parser
         return match ($token->type) {
             TokenType::Integer => $this->parseInteger(),
             TokenType::Float => $this->parseFloat(),
+            TokenType::Boolean => $this->parseBoolean(),
             TokenType::BasicString,
             TokenType::LiteralString,
             TokenType::MultilineBasicString,
@@ -305,6 +306,16 @@ final class Parser
         $token = $this->advance();
 
         return $token->value;
+    }
+
+    /**
+     * Parse a boolean value.
+     */
+    private function parseBoolean(): bool
+    {
+        $token = $this->advance();
+
+        return $token->value === 'true';
     }
 
     /**
