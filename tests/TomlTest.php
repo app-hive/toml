@@ -843,6 +843,54 @@ TOML;
             expect($result['ld'])->toBeString();
         });
     });
+
+    describe('local times', function () {
+        it('parses local time', function () {
+            expect(Toml::parse('lt1 = 07:32:00'))->toBe(['lt1' => '07:32:00']);
+        });
+
+        it('supports fractional seconds', function () {
+            expect(Toml::parse('lt2 = 00:32:00.999999'))->toBe(['lt2' => '00:32:00.999999']);
+        });
+
+        it('parses various valid times', function () {
+            expect(Toml::parse('lt1 = 00:00:00'))->toBe(['lt1' => '00:00:00']);
+            expect(Toml::parse('lt2 = 23:59:59'))->toBe(['lt2' => '23:59:59']);
+            expect(Toml::parse('lt3 = 12:30:45'))->toBe(['lt3' => '12:30:45']);
+        });
+
+        it('parses multiple local time key-value pairs', function () {
+            $toml = <<<'TOML'
+start_time = 07:32:00
+end_time = 17:30:00
+precise = 12:00:00.999999
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'start_time' => '07:32:00',
+                'end_time' => '17:30:00',
+                'precise' => '12:00:00.999999',
+            ]);
+        });
+
+        it('parses local times in real-world TOML example', function () {
+            $toml = <<<'TOML'
+opening_time = 09:00:00
+closing_time = 17:00:00
+lunch_break = 12:30:00
+precise_measurement = 13:45:30.123456
+TOML;
+            $result = Toml::parse($toml);
+            expect($result['opening_time'])->toBe('09:00:00');
+            expect($result['closing_time'])->toBe('17:00:00');
+            expect($result['lunch_break'])->toBe('12:30:00');
+            expect($result['precise_measurement'])->toBe('13:45:30.123456');
+        });
+
+        it('returns string type for local times', function () {
+            $result = Toml::parse('lt = 07:32:00');
+            expect($result['lt'])->toBeString();
+        });
+    });
 });
 
 describe('Toml::parseFile()', function () {

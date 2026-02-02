@@ -528,7 +528,7 @@ final class Lexer
 
         // First, check for local time pattern: HH:MM:SS (before date check)
         $timePattern = '';
-        for ($i = 0; $i < 12; $i++) { // 12 chars for HH:MM:SS.xxx
+        for ($i = 0; $i < 20; $i++) { // 20 chars to support HH:MM:SS.fractional (up to 6+ decimals)
             $char = $this->lookAhead($i);
             if ($char === null) {
                 break;
