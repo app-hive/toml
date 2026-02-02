@@ -369,6 +369,138 @@ TOML;
         });
     });
 
+    describe('dotted keys', function () {
+        it('parses simple dotted keys', function () {
+            expect(Toml::parse('physical.color = "orange"'))->toBe([
+                'physical' => ['color' => 'orange'],
+            ]);
+        });
+
+        it('parses dotted keys with multiple levels', function () {
+            expect(Toml::parse('physical.shape.type = "sphere"'))->toBe([
+                'physical' => ['shape' => ['type' => 'sphere']],
+            ]);
+        });
+
+        it('allows whitespace around dots', function () {
+            expect(Toml::parse('physical . color = "orange"'))->toBe([
+                'physical' => ['color' => 'orange'],
+            ]);
+        });
+
+        it('allows whitespace around dots with multiple levels', function () {
+            expect(Toml::parse('a . b . c = "value"'))->toBe([
+                'a' => ['b' => ['c' => 'value']],
+            ]);
+        });
+
+        it('mixes bare and quoted keys', function () {
+            expect(Toml::parse('site."google.com" = true'))->toBe([
+                'site' => ['google.com' => true],
+            ]);
+        });
+
+        it('mixes bare and literal quoted keys', function () {
+            expect(Toml::parse("site.'google.com' = true"))->toBe([
+                'site' => ['google.com' => true],
+            ]);
+        });
+
+        it('parses all quoted dotted keys', function () {
+            expect(Toml::parse('"first"."second" = "value"'))->toBe([
+                'first' => ['second' => 'value'],
+            ]);
+        });
+
+        it('parses dotted keys with empty quoted key parts', function () {
+            expect(Toml::parse('"".name = "blank"'))->toBe([
+                '' => ['name' => 'blank'],
+            ]);
+        });
+
+        it('creates nested structure from multiple dotted key assignments', function () {
+            $toml = <<<'TOML'
+fruit.apple.color = "red"
+fruit.apple.taste = "sweet"
+fruit.orange.color = "orange"
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'fruit' => [
+                    'apple' => [
+                        'color' => 'red',
+                        'taste' => 'sweet',
+                    ],
+                    'orange' => [
+                        'color' => 'orange',
+                    ],
+                ],
+            ]);
+        });
+
+        it('merges dotted keys with regular keys', function () {
+            $toml = <<<'TOML'
+name = "Apple"
+physical.color = "red"
+physical.shape = "round"
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'name' => 'Apple',
+                'physical' => [
+                    'color' => 'red',
+                    'shape' => 'round',
+                ],
+            ]);
+        });
+
+        it('parses deeply nested dotted keys', function () {
+            expect(Toml::parse('a.b.c.d.e = 5'))->toBe([
+                'a' => ['b' => ['c' => ['d' => ['e' => 5]]]],
+            ]);
+        });
+
+        it('rejects redefining an existing key', function () {
+            $toml = <<<'TOML'
+fruit.apple = 1
+fruit.apple = 2
+TOML;
+            Toml::parse($toml);
+        })->throws(TomlParseException::class);
+
+        it('rejects defining a key that was already used as a table', function () {
+            $toml = <<<'TOML'
+fruit.apple.color = "red"
+fruit.apple = "bad"
+TOML;
+            Toml::parse($toml);
+        })->throws(TomlParseException::class);
+
+        it('rejects defining a dotted key under a non-table', function () {
+            $toml = <<<'TOML'
+fruit = "apple"
+fruit.color = "red"
+TOML;
+            Toml::parse($toml);
+        })->throws(TomlParseException::class);
+
+        it('parses dotted keys with integer values', function () {
+            expect(Toml::parse('data.count = 42'))->toBe([
+                'data' => ['count' => 42],
+            ]);
+        });
+
+        it('parses dotted keys with float values', function () {
+            expect(Toml::parse('data.ratio = 3.14'))->toBe([
+                'data' => ['ratio' => 3.14],
+            ]);
+        });
+
+        it('parses dotted keys with quoted keys containing special characters', function () {
+            expect(Toml::parse('"127.0.0.1".port = 8080'))->toBe([
+                '127.0.0.1' => ['port' => 8080],
+            ]);
+        });
+    });
+
     describe('multi-line basic strings', function () {
         it('parses simple multi-line basic string with triple double quotes', function () {
             $toml = 'str = """hello world"""';

@@ -65,13 +65,13 @@ final class Parser
      */
     private function parseKeyValue(array &$result): void
     {
-        $key = $this->parseKey();
+        $keyParts = $this->parseDottedKey();
 
         $this->expect(TokenType::Equals);
 
         $value = $this->parseValue();
 
-        $result[$key] = $value;
+        $this->setNestedValue($result, $keyParts, $value);
 
         // Expect newline or EOF after value
         if (! $this->isAtEnd() && ! $this->check(TokenType::Newline)) {
@@ -88,9 +88,27 @@ final class Parser
     }
 
     /**
-     * Parse a key (bare key or quoted string).
+     * Parse a dotted key (e.g., "physical.color" or "site.'google.com'").
+     *
+     * @return list<string>
      */
-    private function parseKey(): string
+    private function parseDottedKey(): array
+    {
+        $parts = [];
+        $parts[] = $this->parseSimpleKey();
+
+        while ($this->check(TokenType::Dot)) {
+            $this->advance(); // consume the dot
+            $parts[] = $this->parseSimpleKey();
+        }
+
+        return $parts;
+    }
+
+    /**
+     * Parse a simple key (bare key or quoted string).
+     */
+    private function parseSimpleKey(): string
     {
         $token = $this->peek();
 
@@ -112,6 +130,54 @@ final class Parser
             $token->column,
             $this->source
         );
+    }
+
+    /**
+     * Set a value in a nested array structure, creating intermediate arrays as needed.
+     *
+     * @param  array<string, mixed>  $array
+     * @param  list<string>  $keyParts
+     *
+     * @throws TomlParseException
+     */
+    private function setNestedValue(array &$array, array $keyParts, mixed $value): void
+    {
+        $current = &$array;
+
+        // Navigate/create intermediate tables
+        for ($i = 0; $i < count($keyParts) - 1; $i++) {
+            $key = $keyParts[$i];
+
+            if (! isset($current[$key])) {
+                $current[$key] = [];
+            } elseif (! is_array($current[$key])) {
+                // Trying to use a scalar value as a table
+                $token = $this->peek();
+                throw new TomlParseException(
+                    "Cannot define key '{$keyParts[$i + 1]}' because '{$key}' is not a table",
+                    $token->line,
+                    $token->column,
+                    $this->source
+                );
+            }
+
+            $current = &$current[$key];
+        }
+
+        // Set the final value
+        $finalKey = $keyParts[count($keyParts) - 1];
+
+        if (isset($current[$finalKey])) {
+            $token = $this->peek();
+            throw new TomlParseException(
+                "Cannot redefine key '{$finalKey}'",
+                $token->line,
+                $token->column,
+                $this->source
+            );
+        }
+
+        $current[$finalKey] = $value;
     }
 
     /**
