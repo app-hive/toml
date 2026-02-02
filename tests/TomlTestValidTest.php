@@ -14,7 +14,6 @@ use AppHive\Toml\Toml;
  * - Multiline string handling: Some edge cases with line ending escapes
  * - Control character handling: Some control characters in specific contexts
  * - TOML 1.1.0 features: Some TOML 1.1.0 spec features not fully supported
- * - Newlines in inline tables: TOML 1.1.0 allows newlines in inline tables
  */
 const KNOWN_VALID_FAILURES = [
     // Numeric bare keys - some tests still need work (date-like keys, special words, etc.)
@@ -53,10 +52,6 @@ const KNOWN_VALID_FAILURES = [
     // Comment handling edge cases
     'comment / after-literal-no-ws',
     'comment / tricky',
-
-    // TOML 1.1.0 - Newlines in inline tables
-    'inline-table / newline',
-    'inline-table / newline-comment',
 
     // TOML 1.1.0 - Other features
     'spec-1.1.0 / common-28',
