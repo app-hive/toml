@@ -2055,6 +2055,385 @@ describe('Toml::parseFile()', function () {
     })->throws(TomlParseException::class, 'File is not readable');
 });
 
+describe('array of tables', function () {
+    it('parses simple array of tables', function () {
+        $toml = <<<'TOML'
+[[products]]
+name = "Hammer"
+sku = 738594937
+
+[[products]]
+name = "Nail"
+sku = 284758393
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'products' => [
+                ['name' => 'Hammer', 'sku' => 738594937],
+                ['name' => 'Nail', 'sku' => 284758393],
+            ],
+        ]);
+    });
+
+    it('parses array of tables with single element', function () {
+        $toml = <<<'TOML'
+[[products]]
+name = "Hammer"
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'products' => [
+                ['name' => 'Hammer'],
+            ],
+        ]);
+    });
+
+    it('parses empty array of tables element', function () {
+        $toml = <<<'TOML'
+[[products]]
+
+[[products]]
+name = "Nail"
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'products' => [
+                [],
+                ['name' => 'Nail'],
+            ],
+        ]);
+    });
+
+    it('parses array of tables with nested path', function () {
+        $toml = <<<'TOML'
+[[fruits]]
+name = "apple"
+
+[[fruits.varieties]]
+name = "red delicious"
+
+[[fruits.varieties]]
+name = "granny smith"
+
+[[fruits]]
+name = "banana"
+
+[[fruits.varieties]]
+name = "plantain"
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'fruits' => [
+                [
+                    'name' => 'apple',
+                    'varieties' => [
+                        ['name' => 'red delicious'],
+                        ['name' => 'granny smith'],
+                    ],
+                ],
+                [
+                    'name' => 'banana',
+                    'varieties' => [
+                        ['name' => 'plantain'],
+                    ],
+                ],
+            ],
+        ]);
+    });
+
+    it('allows sub-tables within array of tables elements', function () {
+        $toml = <<<'TOML'
+[[products]]
+name = "Hammer"
+sku = 738594937
+
+[products.details]
+weight = 1.5
+color = "silver"
+
+[[products]]
+name = "Nail"
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'products' => [
+                [
+                    'name' => 'Hammer',
+                    'sku' => 738594937,
+                    'details' => [
+                        'weight' => 1.5,
+                        'color' => 'silver',
+                    ],
+                ],
+                ['name' => 'Nail'],
+            ],
+        ]);
+    });
+
+    it('parses nested sub-tables within array of tables', function () {
+        $toml = <<<'TOML'
+[[products]]
+name = "Hammer"
+
+[products.physical]
+color = "gray"
+
+[products.physical.dimensions]
+width = 5
+height = 2
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'products' => [
+                [
+                    'name' => 'Hammer',
+                    'physical' => [
+                        'color' => 'gray',
+                        'dimensions' => [
+                            'width' => 5,
+                            'height' => 2,
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+    });
+
+    it('allows whitespace inside array of tables brackets', function () {
+        $toml = <<<'TOML'
+[[  products  ]]
+name = "Hammer"
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'products' => [
+                ['name' => 'Hammer'],
+            ],
+        ]);
+    });
+
+    it('parses array of tables with quoted keys', function () {
+        $toml = <<<'TOML'
+[["special.items"]]
+name = "Widget"
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'special.items' => [
+                ['name' => 'Widget'],
+            ],
+        ]);
+    });
+
+    it('parses array of tables with dotted quoted keys', function () {
+        $toml = <<<'TOML'
+[[servers."alpha.example.com"]]
+ip = "10.0.0.1"
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'servers' => [
+                'alpha.example.com' => [
+                    ['ip' => '10.0.0.1'],
+                ],
+            ],
+        ]);
+    });
+
+    it('parses array of tables with root-level keys', function () {
+        $toml = <<<'TOML'
+title = "Store"
+
+[[products]]
+name = "Hammer"
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'title' => 'Store',
+            'products' => [
+                ['name' => 'Hammer'],
+            ],
+        ]);
+    });
+
+    it('parses array of tables with standard tables', function () {
+        $toml = <<<'TOML'
+[store]
+name = "Hardware Store"
+
+[[store.products]]
+name = "Hammer"
+
+[[store.products]]
+name = "Nail"
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'store' => [
+                'name' => 'Hardware Store',
+                'products' => [
+                    ['name' => 'Hammer'],
+                    ['name' => 'Nail'],
+                ],
+            ],
+        ]);
+    });
+
+    it('allows multiple array of tables at different paths', function () {
+        $toml = <<<'TOML'
+[[products]]
+name = "Hammer"
+
+[[categories]]
+name = "Tools"
+
+[[products]]
+name = "Nail"
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'products' => [
+                ['name' => 'Hammer'],
+                ['name' => 'Nail'],
+            ],
+            'categories' => [
+                ['name' => 'Tools'],
+            ],
+        ]);
+    });
+
+    it('rejects redefining array of tables as standard table', function () {
+        $toml = <<<'TOML'
+[[products]]
+name = "Hammer"
+
+[products]
+name = "Invalid"
+TOML;
+        Toml::parse($toml);
+    })->throws(TomlParseException::class);
+
+    it('rejects redefining standard table as array of tables', function () {
+        $toml = <<<'TOML'
+[products]
+name = "Single"
+
+[[products]]
+name = "Invalid"
+TOML;
+        Toml::parse($toml);
+    })->throws(TomlParseException::class);
+
+    it('rejects defining key under non-table in array of tables path', function () {
+        $toml = <<<'TOML'
+products = "scalar"
+
+[[products]]
+name = "Invalid"
+TOML;
+        Toml::parse($toml);
+    })->throws(TomlParseException::class);
+
+    it('parses array of tables in real-world TOML example', function () {
+        $toml = <<<'TOML'
+# Application configuration
+title = "TOML Example"
+
+[[servers]]
+name = "alpha"
+ip = "10.0.0.1"
+dc = "eqdc10"
+
+[[servers]]
+name = "beta"
+ip = "10.0.0.2"
+dc = "eqdc10"
+
+[database]
+server = "192.168.1.1"
+enabled = true
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'title' => 'TOML Example',
+            'servers' => [
+                ['name' => 'alpha', 'ip' => '10.0.0.1', 'dc' => 'eqdc10'],
+                ['name' => 'beta', 'ip' => '10.0.0.2', 'dc' => 'eqdc10'],
+            ],
+            'database' => [
+                'server' => '192.168.1.1',
+                'enabled' => true,
+            ],
+        ]);
+    });
+
+    it('parses complex nested structure with array of tables', function () {
+        $toml = <<<'TOML'
+[[fruit]]
+name = "apple"
+
+[fruit.physical]
+color = "red"
+shape = "round"
+
+[[fruit.variety]]
+name = "red delicious"
+
+[[fruit.variety]]
+name = "granny smith"
+
+[[fruit]]
+name = "banana"
+
+[[fruit.variety]]
+name = "plantain"
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'fruit' => [
+                [
+                    'name' => 'apple',
+                    'physical' => [
+                        'color' => 'red',
+                        'shape' => 'round',
+                    ],
+                    'variety' => [
+                        ['name' => 'red delicious'],
+                        ['name' => 'granny smith'],
+                    ],
+                ],
+                [
+                    'name' => 'banana',
+                    'variety' => [
+                        ['name' => 'plantain'],
+                    ],
+                ],
+            ],
+        ]);
+    });
+
+    it('parses deeply nested array of tables', function () {
+        $toml = <<<'TOML'
+[[a.b.c]]
+key = "value"
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'a' => [
+                'b' => [
+                    'c' => [
+                        ['key' => 'value'],
+                    ],
+                ],
+            ],
+        ]);
+    });
+
+    it('allows array of inline tables in combination with array of tables', function () {
+        $toml = <<<'TOML'
+[[products]]
+name = "Hammer"
+tags = [ { name = "tool" }, { name = "hardware" } ]
+TOML;
+        expect(Toml::parse($toml))->toBe([
+            'products' => [
+                [
+                    'name' => 'Hammer',
+                    'tags' => [
+                        ['name' => 'tool'],
+                        ['name' => 'hardware'],
+                    ],
+                ],
+            ],
+        ]);
+    });
+});
+
 describe('TomlParseException', function () {
     it('provides line number via getErrorLine()', function () {
         $exception = new TomlParseException('Unexpected token', 5, 10, '');

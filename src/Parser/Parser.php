@@ -42,6 +42,14 @@ final class Parser
      */
     private array $implicitDottedKeyTables = [];
 
+    /**
+     * Track which paths are array of tables (not regular tables).
+     * Keys are dot-joined paths.
+     *
+     * @var array<string, bool>
+     */
+    private array $arrayOfTablesPaths = [];
+
     public function __construct(string $source)
     {
         $this->source = $source;
@@ -65,9 +73,14 @@ final class Parser
                 break;
             }
 
-            // Parse table header [table] or [table.subtable]
+            // Parse table header [table] or [table.subtable] or array of tables [[table]]
             if ($this->check(TokenType::LeftBracket)) {
-                $this->parseTableHeader($result);
+                // Check if this is an array of tables [[...]]
+                if ($this->isArrayOfTables()) {
+                    $this->parseArrayOfTablesHeader($result);
+                } else {
+                    $this->parseTableHeader($result);
+                }
 
                 continue;
             }
@@ -127,6 +140,162 @@ final class Parser
     }
 
     /**
+     * Check if the next tokens form an array of tables header [[...]].
+     */
+    private function isArrayOfTables(): bool
+    {
+        // We're at '[', check if next token is also '['
+        $savedPosition = $this->position;
+        $this->advance(); // consume first '['
+
+        $isArray = $this->check(TokenType::LeftBracket);
+
+        // Restore position
+        $this->position = $savedPosition;
+
+        return $isArray;
+    }
+
+    /**
+     * Parse an array of tables header [[table]] or [[table.subtable]].
+     *
+     * @param  array<string, mixed>  $result
+     */
+    private function parseArrayOfTablesHeader(array &$result): void
+    {
+        $startToken = $this->advance(); // consume first '['
+        $this->advance(); // consume second '['
+
+        // Parse the table key (may be dotted)
+        $keyParts = $this->parseDottedKey();
+
+        $this->expect(TokenType::RightBracket);
+        $this->expect(TokenType::RightBracket);
+
+        // Expect newline or EOF after array of tables header
+        if (! $this->isAtEnd() && ! $this->check(TokenType::Newline)) {
+            $token = $this->peek();
+            throw new TomlParseException(
+                'Expected newline after array of tables header',
+                $token->line,
+                $token->column,
+                $this->source
+            );
+        }
+
+        $this->skipNewlines();
+
+        // Build the table path string
+        $tablePath = implode('.', $keyParts);
+
+        // Check if this path was already defined as a regular table
+        if (isset($this->definedTables[$tablePath]) && ! isset($this->arrayOfTablesPaths[$tablePath])) {
+            throw new TomlParseException(
+                "Cannot define array of tables '{$tablePath}' because it was already defined as a table",
+                $startToken->line,
+                $startToken->column,
+                $this->source
+            );
+        }
+
+        // Check if this path was created by dotted keys (cannot redefine)
+        if (isset($this->implicitDottedKeyTables[$tablePath])) {
+            throw new TomlParseException(
+                "Cannot redefine '{$tablePath}' that was implicitly defined by dotted keys",
+                $startToken->line,
+                $startToken->column,
+                $this->source
+            );
+        }
+
+        // Mark this path as an array of tables
+        $this->arrayOfTablesPaths[$tablePath] = true;
+
+        // Add a new element to the array
+        $this->addArrayOfTablesElement($result, $keyParts, $startToken);
+
+        // Set current table path for subsequent key-value pairs
+        // For array of tables, we point to the current element
+        $this->currentTablePath = $keyParts;
+    }
+
+    /**
+     * Add a new element to an array of tables.
+     *
+     * @param  array<string, mixed>  $result
+     * @param  list<string>  $keyParts
+     */
+    private function addArrayOfTablesElement(array &$result, array $keyParts, Token $token): void
+    {
+        /** @var array<string, mixed> $current */
+        $current = &$result;
+
+        // Navigate to the parent of the final key, handling array of tables along the way
+        for ($i = 0; $i < count($keyParts) - 1; $i++) {
+            $key = $keyParts[$i];
+            $partialPath = implode('.', array_slice($keyParts, 0, $i + 1));
+
+            if (! isset($current[$key])) {
+                $current[$key] = [];
+            }
+
+            // If this path is an array of tables, navigate to the last element
+            if (isset($this->arrayOfTablesPaths[$partialPath])) {
+                /** @var array<int, array<string, mixed>> $arrayValue */
+                $arrayValue = &$current[$key];
+                if (empty($arrayValue)) {
+                    throw new TomlParseException(
+                        'Cannot define nested array of tables under non-array',
+                        $token->line,
+                        $token->column,
+                        $this->source
+                    );
+                }
+                // Navigate to the last element of this array
+                $lastIndex = count($arrayValue) - 1;
+                $current = &$arrayValue[$lastIndex];
+            } else {
+                /** @var mixed $keyValue */
+                $keyValue = $current[$key];
+                if (! is_array($keyValue)) {
+                    throw new TomlParseException(
+                        "Cannot define key '{$key}' as a table because it is not a table",
+                        $token->line,
+                        $token->column,
+                        $this->source
+                    );
+                }
+                /** @var array<string, mixed> $nextCurrent */
+                $nextCurrent = &$current[$key];
+                $current = &$nextCurrent;
+            }
+        }
+
+        // Now handle the final key - this is where we add the new array element
+        $finalKey = $keyParts[count($keyParts) - 1];
+
+        if (! isset($current[$finalKey])) {
+            $current[$finalKey] = [];
+        } else {
+            /** @var mixed $finalValue */
+            $finalValue = $current[$finalKey];
+            if (! is_array($finalValue)) {
+                throw new TomlParseException(
+                    "Cannot define '{$finalKey}' as array of tables because it is not an array",
+                    $token->line,
+                    $token->column,
+                    $this->source
+                );
+            }
+        }
+
+        // Add a new element to the array
+        /** @var array<int, array<string, mixed>> $arrayTarget */
+        $arrayTarget = &$current[$finalKey];
+        $arrayTarget[] = [];
+    }
+
+    /**
      * Parse a table header [table] or [table.subtable].
      *
      * @param  array<string, mixed>  $result
@@ -156,6 +325,16 @@ final class Parser
         // Build the table path string for duplicate detection
         $tablePath = implode('.', $keyParts);
 
+        // Check if this path was already defined as an array of tables
+        if (isset($this->arrayOfTablesPaths[$tablePath])) {
+            throw new TomlParseException(
+                "Cannot define table '{$tablePath}' because it was already defined as an array of tables",
+                $startToken->line,
+                $startToken->column,
+                $this->source
+            );
+        }
+
         // Check if this table was already explicitly defined
         if (isset($this->definedTables[$tablePath])) {
             throw new TomlParseException(
@@ -180,38 +359,64 @@ final class Parser
         $this->definedTables[$tablePath] = true;
 
         // Ensure the table path exists in the result, creating intermediate tables as needed
-        $this->ensureTableExists($result, $keyParts, $startToken);
+        $this->ensureTableExistsForTable($result, $keyParts, $startToken);
 
         // Set current table path for subsequent key-value pairs
         $this->currentTablePath = $keyParts;
     }
 
     /**
-     * Ensure the table path exists in the result array.
+     * Ensure the table path exists for a standard [table] header.
+     * Handles navigation through array of tables when needed.
      *
      * @param  array<string, mixed>  $result
      * @param  list<string>  $keyParts
      */
-    private function ensureTableExists(array &$result, array $keyParts, Token $token): void
+    private function ensureTableExistsForTable(array &$result, array $keyParts, Token $token): void
     {
+        /** @var array<string, mixed> $current */
         $current = &$result;
 
         for ($i = 0; $i < count($keyParts); $i++) {
             $key = $keyParts[$i];
+            $partialPath = implode('.', array_slice($keyParts, 0, $i + 1));
 
             if (! isset($current[$key])) {
                 $current[$key] = [];
-            } elseif (! is_array($current[$key])) {
-                // Trying to define a table where a scalar value exists
-                throw new TomlParseException(
-                    "Cannot redefine key '{$key}' as a table because it is not a table",
-                    $token->line,
-                    $token->column,
-                    $this->source
-                );
+            } else {
+                /** @var mixed $keyValue */
+                $keyValue = $current[$key];
+                if (! is_array($keyValue)) {
+                    // Trying to define a table where a scalar value exists
+                    throw new TomlParseException(
+                        "Cannot redefine key '{$key}' as a table because it is not a table",
+                        $token->line,
+                        $token->column,
+                        $this->source
+                    );
+                }
             }
 
-            $current = &$current[$key];
+            // If this partial path is an array of tables, navigate to the last element
+            if (isset($this->arrayOfTablesPaths[$partialPath])) {
+                /** @var array<int, array<string, mixed>> $arrayValue */
+                $arrayValue = &$current[$key];
+                if (empty($arrayValue)) {
+                    throw new TomlParseException(
+                        "Cannot define sub-table under empty array of tables '{$partialPath}'",
+                        $token->line,
+                        $token->column,
+                        $this->source
+                    );
+                }
+                // Navigate to the last element
+                $lastIndex = count($arrayValue) - 1;
+                $current = &$arrayValue[$lastIndex];
+            } else {
+                /** @var array<string, mixed> $nextCurrent */
+                $nextCurrent = &$current[$key];
+                $current = &$nextCurrent;
+            }
         }
     }
 
@@ -280,6 +485,7 @@ final class Parser
 
     /**
      * Set a value in a nested array structure, creating intermediate arrays as needed.
+     * Handles array of tables by navigating to the last element of each array.
      *
      * @param  array<string, mixed>  $array
      * @param  list<string>  $keyParts
@@ -288,26 +494,52 @@ final class Parser
      */
     private function setNestedValue(array &$array, array $keyParts, mixed $value): void
     {
+        /** @var array<string, mixed> $current */
         $current = &$array;
 
         // Navigate/create intermediate tables
         for ($i = 0; $i < count($keyParts) - 1; $i++) {
             $key = $keyParts[$i];
+            $partialPath = implode('.', array_slice($keyParts, 0, $i + 1));
 
             if (! isset($current[$key])) {
                 $current[$key] = [];
-            } elseif (! is_array($current[$key])) {
-                // Trying to use a scalar value as a table
-                $token = $this->peek();
-                throw new TomlParseException(
-                    "Cannot define key '{$keyParts[$i + 1]}' because '{$key}' is not a table",
-                    $token->line,
-                    $token->column,
-                    $this->source
-                );
+            } else {
+                /** @var mixed $keyValue */
+                $keyValue = $current[$key];
+                if (! is_array($keyValue)) {
+                    // Trying to use a scalar value as a table
+                    $token = $this->peek();
+                    throw new TomlParseException(
+                        "Cannot define key '{$keyParts[$i + 1]}' because '{$key}' is not a table",
+                        $token->line,
+                        $token->column,
+                        $this->source
+                    );
+                }
             }
 
-            $current = &$current[$key];
+            // If this partial path is an array of tables, navigate to the last element
+            if (isset($this->arrayOfTablesPaths[$partialPath])) {
+                /** @var array<int, array<string, mixed>> $arrayValue */
+                $arrayValue = &$current[$key];
+                if (empty($arrayValue)) {
+                    $token = $this->peek();
+                    throw new TomlParseException(
+                        "Cannot set value under empty array of tables '{$partialPath}'",
+                        $token->line,
+                        $token->column,
+                        $this->source
+                    );
+                }
+                // Navigate to the last element
+                $lastIndex = count($arrayValue) - 1;
+                $current = &$arrayValue[$lastIndex];
+            } else {
+                /** @var array<string, mixed> $nextCurrent */
+                $nextCurrent = &$current[$key];
+                $current = &$nextCurrent;
+            }
         }
 
         // Set the final value
