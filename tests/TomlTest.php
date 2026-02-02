@@ -388,6 +388,17 @@ TOML;
             expect(Toml::parse('planck = 6.626e-34'))->toBe(['planck' => 6.626e-34]);
         });
 
+        it('parses floats with underscore in significand and exponent', function () {
+            // Underscore in significand
+            expect(Toml::parse('a = 1_000e2'))->toBe(['a' => 100000.0]);
+            // Underscore in significand with decimal
+            expect(Toml::parse('b = 1_000.5e2'))->toBe(['b' => 100050.0]);
+            // Underscore in exponent
+            expect(Toml::parse('c = 1e1_0'))->toBe(['c' => 1e10]);
+            // Underscore in both significand and exponent
+            expect(Toml::parse('d = 1_000.5_0e1_0'))->toBe(['d' => 1000.50e10]);
+        });
+
         it('parses floats with underscores', function () {
             expect(Toml::parse('big = 9_224_617.445_991_228_313'))->toBe(['big' => 9224617.445991228313]);
         });
