@@ -184,12 +184,8 @@ const KNOWN_INVALID_FAILURES = [
     'table / llbrace',
     'table / rrbrace',
 
-    // String/Unicode escape validation
-    'string / bad-uni-esc-06',
-    'string / bad-uni-esc-ml-06',
+    // String/Unicode escape validation - TOML 1.1.0 allows \xNN byte escapes
     'string / basic-byte-escapes',
-    'string / string / bad-uni-esc-06',
-    'string / string / bad-uni-esc-ml-06',
 
     // Spec tests
     'spec-1.0.0 / inline-table-2-0',
