@@ -637,6 +637,7 @@ final class Lexer
                 // We need to "unadvance" by the separator and failed time pattern
                 $this->position -= strlen($timePattern) + 1;
                 $this->column -= strlen($timePattern) + 1;
+
                 // Return just the date
                 return new Token(TokenType::LocalDate, $datePattern, $line, $column);
             }

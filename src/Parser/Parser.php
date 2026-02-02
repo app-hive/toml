@@ -842,7 +842,8 @@ final class Parser
 
     /**
      * Normalize a time component (HH:MM:SS or HH:MM with optional fractional seconds).
-     * Preserves original fractional second precision as per TOML spec.
+     * Fractional seconds are padded to at least millisecond precision (3 digits)
+     * as per TOML spec requirement for implementations to support millisecond precision.
      */
     private function normalizeTimeComponent(string $time): string
     {
@@ -851,8 +852,10 @@ final class Parser
             [$timePart, $fraction] = explode('.', $time, 2);
             $normalizedTime = $this->ensureSeconds($timePart);
 
-            // Preserve original precision (don't pad fractional seconds)
-            return $normalizedTime.'.'.$fraction;
+            // Pad to at least millisecond precision (3 digits)
+            $normalizedFraction = str_pad($fraction, 3, '0');
+
+            return $normalizedTime.'.'.$normalizedFraction;
         }
 
         return $this->ensureSeconds($time);

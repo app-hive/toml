@@ -36,9 +36,6 @@ const KNOWN_VALID_FAILURES = [
     // Datetime tests with numeric bare keys (not datetime normalization issues)
     'datetime / leap-year', // Uses keys like "2000-datetime" which are numeric bare keys
 
-    // Datetime fractional second padding - test expects padding but we preserve precision
-    'datetime / milliseconds',
-
     // Multiline string handling
     'string / ends-in-whitespace-escape',
     'string / hex-escape',
@@ -66,6 +63,11 @@ const KNOWN_VALID_FAILURES = [
     'spec-1.1.0 / common-29',
     'spec-1.1.0 / common-31',
     'spec-1.1.0 / common-34',
+
+    // TOML 1.1.0 - Fractional seconds normalization (these expect no padding, but milliseconds test expects padding)
+    'spec-1.1.0 / common-27',
+    'spec-1.1.0 / common-30',
+    'spec-1.1.0 / common-33',
 ];
 
 /**
