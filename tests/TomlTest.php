@@ -1189,6 +1189,304 @@ TOML;
             expect($result['lt'])->toBeString();
         });
     });
+
+    describe('standard tables', function () {
+        it('parses simple table header', function () {
+            $toml = <<<'TOML'
+[table]
+key = "value"
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'table' => ['key' => 'value'],
+            ]);
+        });
+
+        it('parses empty table', function () {
+            expect(Toml::parse('[table]'))->toBe(['table' => []]);
+        });
+
+        it('parses table with multiple keys', function () {
+            $toml = <<<'TOML'
+[server]
+host = "localhost"
+port = 8080
+enabled = true
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'server' => [
+                    'host' => 'localhost',
+                    'port' => 8080,
+                    'enabled' => true,
+                ],
+            ]);
+        });
+
+        it('parses multiple tables', function () {
+            $toml = <<<'TOML'
+[server]
+host = "localhost"
+
+[database]
+name = "mydb"
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'server' => ['host' => 'localhost'],
+                'database' => ['name' => 'mydb'],
+            ]);
+        });
+
+        it('parses nested tables with dots', function () {
+            $toml = <<<'TOML'
+[a.b.c]
+key = "deep"
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'a' => ['b' => ['c' => ['key' => 'deep']]],
+            ]);
+        });
+
+        it('parses nested table headers creating hierarchy', function () {
+            $toml = <<<'TOML'
+[parent]
+name = "parent"
+
+[parent.child]
+name = "child"
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'parent' => [
+                    'name' => 'parent',
+                    'child' => ['name' => 'child'],
+                ],
+            ]);
+        });
+
+        it('allows defining super-tables implicitly', function () {
+            $toml = <<<'TOML'
+[a.b.c]
+key = "value"
+
+[a]
+name = "defined later"
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'a' => [
+                    'b' => ['c' => ['key' => 'value']],
+                    'name' => 'defined later',
+                ],
+            ]);
+        });
+
+        it('allows adding keys to implicitly defined super-table', function () {
+            $toml = <<<'TOML'
+[x.y.z]
+deep = true
+
+[x.y]
+middle = true
+
+[x]
+top = true
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'x' => [
+                    'y' => [
+                        'z' => ['deep' => true],
+                        'middle' => true,
+                    ],
+                    'top' => true,
+                ],
+            ]);
+        });
+
+        it('parses table with quoted keys', function () {
+            $toml = <<<'TOML'
+["127.0.0.1"]
+port = 8080
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                '127.0.0.1' => ['port' => 8080],
+            ]);
+        });
+
+        it('parses nested table with mixed quoted and bare keys', function () {
+            $toml = <<<'TOML'
+[servers."alpha.example.com"]
+ip = "10.0.0.1"
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'servers' => [
+                    'alpha.example.com' => ['ip' => '10.0.0.1'],
+                ],
+            ]);
+        });
+
+        it('allows whitespace around table header brackets', function () {
+            $toml = <<<'TOML'
+[  table  ]
+key = "value"
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'table' => ['key' => 'value'],
+            ]);
+        });
+
+        it('allows keys before first table header to be root level', function () {
+            $toml = <<<'TOML'
+root_key = "root"
+
+[table]
+table_key = "table"
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'root_key' => 'root',
+                'table' => ['table_key' => 'table'],
+            ]);
+        });
+
+        it('allows dotted keys within a table', function () {
+            $toml = <<<'TOML'
+[table]
+a.b.c = "value"
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'table' => [
+                    'a' => ['b' => ['c' => 'value']],
+                ],
+            ]);
+        });
+
+        it('rejects duplicate table definitions', function () {
+            $toml = <<<'TOML'
+[table]
+key = "first"
+
+[table]
+key = "second"
+TOML;
+            Toml::parse($toml);
+        })->throws(TomlParseException::class, 'already defined');
+
+        it('rejects duplicate nested table definitions', function () {
+            $toml = <<<'TOML'
+[a.b]
+key = "first"
+
+[a.b]
+key = "second"
+TOML;
+            Toml::parse($toml);
+        })->throws(TomlParseException::class, 'already defined');
+
+        it('rejects redefining a key as a table', function () {
+            $toml = <<<'TOML'
+a = "scalar"
+
+[a]
+key = "value"
+TOML;
+            Toml::parse($toml);
+        })->throws(TomlParseException::class, 'not a table');
+
+        it('rejects redefining a nested key as a table', function () {
+            $toml = <<<'TOML'
+a.b = "scalar"
+
+[a.b]
+key = "value"
+TOML;
+            Toml::parse($toml);
+        })->throws(TomlParseException::class, 'not a table');
+
+        it('rejects defining key inside dotted-key-defined table that conflicts', function () {
+            $toml = <<<'TOML'
+[fruit]
+apple.color = "red"
+apple.taste.sweet = true
+
+[fruit.apple]
+texture = "smooth"
+TOML;
+            Toml::parse($toml);
+        })->throws(TomlParseException::class, 'implicitly defined');
+
+        it('rejects redefining table as scalar', function () {
+            $toml = <<<'TOML'
+[a]
+key = "value"
+
+[b]
+a = "scalar"
+TOML;
+            // This should succeed - different tables, not related
+            expect(Toml::parse($toml))->toBe([
+                'a' => ['key' => 'value'],
+                'b' => ['a' => 'scalar'],
+            ]);
+        });
+
+        it('parses table headers with comments', function () {
+            $toml = <<<'TOML'
+# Comment before table
+[table] # Comment after table header
+key = "value"
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'table' => ['key' => 'value'],
+            ]);
+        });
+
+        it('handles empty lines between table header and keys', function () {
+            $toml = <<<'TOML'
+[table]
+
+key = "value"
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'table' => ['key' => 'value'],
+            ]);
+        });
+
+        it('parses tables in real-world TOML example', function () {
+            $toml = <<<'TOML'
+# Application configuration
+title = "TOML Example"
+
+[owner]
+name = "Tom Preston-Werner"
+dob = 1979-05-27T07:32:00-08:00
+
+[database]
+server = "192.168.1.1"
+ports = 8001
+enabled = true
+
+[servers.alpha]
+ip = "10.0.0.1"
+dc = "eqdc10"
+
+[servers.beta]
+ip = "10.0.0.2"
+dc = "eqdc10"
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'title' => 'TOML Example',
+                'owner' => [
+                    'name' => 'Tom Preston-Werner',
+                    'dob' => '1979-05-27T07:32:00-08:00',
+                ],
+                'database' => [
+                    'server' => '192.168.1.1',
+                    'ports' => 8001,
+                    'enabled' => true,
+                ],
+                'servers' => [
+                    'alpha' => ['ip' => '10.0.0.1', 'dc' => 'eqdc10'],
+                    'beta' => ['ip' => '10.0.0.2', 'dc' => 'eqdc10'],
+                ],
+            ]);
+        });
+    });
 });
 
 describe('Toml::parseFile()', function () {

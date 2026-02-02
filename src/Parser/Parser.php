@@ -18,6 +18,30 @@ final class Parser
 
     private string $source;
 
+    /**
+     * Current table path for key assignments.
+     *
+     * @var list<string>
+     */
+    private array $currentTablePath = [];
+
+    /**
+     * Track explicitly defined tables to prevent duplicates.
+     * Keys are dot-joined paths.
+     *
+     * @var array<string, bool>
+     */
+    private array $definedTables = [];
+
+    /**
+     * Track tables implicitly created by dotted keys within a table.
+     * These cannot be redefined as explicit tables.
+     * Keys are dot-joined paths.
+     *
+     * @var array<string, bool>
+     */
+    private array $implicitDottedKeyTables = [];
+
     public function __construct(string $source)
     {
         $this->source = $source;
@@ -39,6 +63,13 @@ final class Parser
 
             if ($this->isAtEnd()) {
                 break;
+            }
+
+            // Parse table header [table] or [table.subtable]
+            if ($this->check(TokenType::LeftBracket)) {
+                $this->parseTableHeader($result);
+
+                continue;
             }
 
             // Parse key-value pair
@@ -71,7 +102,15 @@ final class Parser
 
         $value = $this->parseValue();
 
-        $this->setNestedValue($result, $keyParts, $value);
+        // Prepend current table path to key parts
+        $fullKeyParts = array_merge($this->currentTablePath, $keyParts);
+
+        // Track intermediate tables created by dotted keys for conflict detection
+        if (count($keyParts) > 1) {
+            $this->trackDottedKeyTables($keyParts);
+        }
+
+        $this->setNestedValue($result, $fullKeyParts, $value);
 
         // Expect newline or EOF after value
         if (! $this->isAtEnd() && ! $this->check(TokenType::Newline)) {
@@ -85,6 +124,113 @@ final class Parser
         }
 
         $this->skipNewlines();
+    }
+
+    /**
+     * Parse a table header [table] or [table.subtable].
+     *
+     * @param  array<string, mixed>  $result
+     */
+    private function parseTableHeader(array &$result): void
+    {
+        $startToken = $this->advance(); // consume '['
+
+        // Parse the table key (may be dotted)
+        $keyParts = $this->parseDottedKey();
+
+        $this->expect(TokenType::RightBracket);
+
+        // Expect newline or EOF after table header
+        if (! $this->isAtEnd() && ! $this->check(TokenType::Newline)) {
+            $token = $this->peek();
+            throw new TomlParseException(
+                'Expected newline after table header',
+                $token->line,
+                $token->column,
+                $this->source
+            );
+        }
+
+        $this->skipNewlines();
+
+        // Build the table path string for duplicate detection
+        $tablePath = implode('.', $keyParts);
+
+        // Check if this table was already explicitly defined
+        if (isset($this->definedTables[$tablePath])) {
+            throw new TomlParseException(
+                "Table '{$tablePath}' already defined",
+                $startToken->line,
+                $startToken->column,
+                $this->source
+            );
+        }
+
+        // Check if this path was created by dotted keys (cannot redefine)
+        if (isset($this->implicitDottedKeyTables[$tablePath])) {
+            throw new TomlParseException(
+                "Cannot redefine table '{$tablePath}' that was implicitly defined by dotted keys",
+                $startToken->line,
+                $startToken->column,
+                $this->source
+            );
+        }
+
+        // Mark this table as explicitly defined
+        $this->definedTables[$tablePath] = true;
+
+        // Ensure the table path exists in the result, creating intermediate tables as needed
+        $this->ensureTableExists($result, $keyParts, $startToken);
+
+        // Set current table path for subsequent key-value pairs
+        $this->currentTablePath = $keyParts;
+    }
+
+    /**
+     * Ensure the table path exists in the result array.
+     *
+     * @param  array<string, mixed>  $result
+     * @param  list<string>  $keyParts
+     */
+    private function ensureTableExists(array &$result, array $keyParts, Token $token): void
+    {
+        $current = &$result;
+
+        for ($i = 0; $i < count($keyParts); $i++) {
+            $key = $keyParts[$i];
+
+            if (! isset($current[$key])) {
+                $current[$key] = [];
+            } elseif (! is_array($current[$key])) {
+                // Trying to define a table where a scalar value exists
+                throw new TomlParseException(
+                    "Cannot redefine key '{$key}' as a table because it is not a table",
+                    $token->line,
+                    $token->column,
+                    $this->source
+                );
+            }
+
+            $current = &$current[$key];
+        }
+    }
+
+    /**
+     * Track tables implicitly created by dotted keys within the current table.
+     *
+     * @param  list<string>  $keyParts  The dotted key parts (without table prefix)
+     */
+    private function trackDottedKeyTables(array $keyParts): void
+    {
+        // Track all intermediate paths created by dotted keys
+        // For a.b.c = value, we track: currentTable.a and currentTable.a.b
+        $basePath = $this->currentTablePath;
+
+        for ($i = 0; $i < count($keyParts) - 1; $i++) {
+            $basePath[] = $keyParts[$i];
+            $pathStr = implode('.', $basePath);
+            $this->implicitDottedKeyTables[$pathStr] = true;
+        }
     }
 
     /**
