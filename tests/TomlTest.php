@@ -20,6 +20,172 @@ describe('Toml::parse()', function () {
         expect($result)->toBeArray();
     });
 
+    describe('key-value pairs', function () {
+        it('parses basic key = value format', function () {
+            expect(Toml::parse('key = "value"'))->toBe(['key' => 'value']);
+        });
+
+        it('parses key-value with integer value', function () {
+            expect(Toml::parse('count = 42'))->toBe(['count' => 42]);
+        });
+
+        it('parses key-value with float value', function () {
+            expect(Toml::parse('ratio = 3.14'))->toBe(['ratio' => 3.14]);
+        });
+
+        it('parses key-value with boolean value', function () {
+            expect(Toml::parse('enabled = true'))->toBe(['enabled' => true]);
+            expect(Toml::parse('disabled = false'))->toBe(['disabled' => false]);
+        });
+
+        it('parses key-value with date-time value', function () {
+            expect(Toml::parse('created = 1979-05-27T07:32:00Z'))->toBe(['created' => '1979-05-27T07:32:00Z']);
+        });
+
+        it('allows whitespace before equals sign', function () {
+            expect(Toml::parse('key   = "value"'))->toBe(['key' => 'value']);
+        });
+
+        it('allows whitespace after equals sign', function () {
+            expect(Toml::parse('key =   "value"'))->toBe(['key' => 'value']);
+        });
+
+        it('allows whitespace around equals sign', function () {
+            expect(Toml::parse('key   =   "value"'))->toBe(['key' => 'value']);
+        });
+
+        it('allows tabs as whitespace around equals sign', function () {
+            expect(Toml::parse("key\t=\t\"value\""))->toBe(['key' => 'value']);
+        });
+
+        it('allows mixed spaces and tabs around equals sign', function () {
+            expect(Toml::parse("key \t = \t \"value\""))->toBe(['key' => 'value']);
+        });
+
+        it('allows no whitespace around equals sign', function () {
+            expect(Toml::parse('key="value"'))->toBe(['key' => 'value']);
+        });
+
+        it('rejects duplicate keys with clear error', function () {
+            $toml = <<<'TOML'
+key = "first"
+key = "second"
+TOML;
+            Toml::parse($toml);
+        })->throws(TomlParseException::class, "Cannot redefine key 'key'");
+
+        it('rejects duplicate keys even with different value types', function () {
+            $toml = <<<'TOML'
+key = 42
+key = "string"
+TOML;
+            Toml::parse($toml);
+        })->throws(TomlParseException::class, "Cannot redefine key 'key'");
+
+        it('rejects duplicate keys in nested dotted structure', function () {
+            $toml = <<<'TOML'
+a.b = 1
+a.b = 2
+TOML;
+            Toml::parse($toml);
+        })->throws(TomlParseException::class, "Cannot redefine key 'b'");
+
+        it('handles all value types in key-value pairs', function () {
+            $toml = <<<'TOML'
+string = "hello"
+integer = 42
+float = 3.14
+boolean = true
+date = 1979-05-27
+time = 07:32:00
+datetime = 1979-05-27T07:32:00Z
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'string' => 'hello',
+                'integer' => 42,
+                'float' => 3.14,
+                'boolean' => true,
+                'date' => '1979-05-27',
+                'time' => '07:32:00',
+                'datetime' => '1979-05-27T07:32:00Z',
+            ]);
+        });
+
+        it('parses multiple key-value pairs', function () {
+            $toml = <<<'TOML'
+first = "one"
+second = "two"
+third = "three"
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'first' => 'one',
+                'second' => 'two',
+                'third' => 'three',
+            ]);
+        });
+
+        it('handles key-value pairs with comments', function () {
+            $toml = <<<'TOML'
+# This is a comment
+key = "value" # inline comment
+# Another comment
+other = 42
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'key' => 'value',
+                'other' => 42,
+            ]);
+        });
+
+        it('handles key-value pairs with blank lines between them', function () {
+            $toml = <<<'TOML'
+first = 1
+
+second = 2
+
+
+third = 3
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'first' => 1,
+                'second' => 2,
+                'third' => 3,
+            ]);
+        });
+
+        it('rejects key-value pairs without equals sign', function () {
+            Toml::parse('key "value"');
+        })->throws(TomlParseException::class);
+
+        it('rejects key-value pairs without value', function () {
+            Toml::parse('key =');
+        })->throws(TomlParseException::class);
+
+        it('rejects multiple values on same line', function () {
+            Toml::parse('key = "value" extra');
+        })->throws(TomlParseException::class);
+
+        it('parses key-value pairs in real-world config example', function () {
+            $toml = <<<'TOML'
+# Application configuration
+name = "MyApp"
+version = "1.0.0"
+debug = false
+port = 8080
+timeout = 30.5
+created = 2024-01-15T10:30:00Z
+TOML;
+            expect(Toml::parse($toml))->toBe([
+                'name' => 'MyApp',
+                'version' => '1.0.0',
+                'debug' => false,
+                'port' => 8080,
+                'timeout' => 30.5,
+                'created' => '2024-01-15T10:30:00Z',
+            ]);
+        });
+    });
+
     describe('integers', function () {
         it('parses simple decimal integers', function () {
             expect(Toml::parse('count = 99'))->toBe(['count' => 99]);
