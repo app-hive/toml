@@ -188,6 +188,58 @@ sku = 284758393
 # ]
 ```
 
+## Parser Configuration
+
+The parser supports two modes via `ParserConfig`:
+
+### Strict Mode (Default)
+
+In strict mode, any spec violation immediately throws a `TomlParseException`. This is the default and recommended mode for production use.
+
+```php
+use AppHive\Toml\Toml;
+use AppHive\Toml\Parser\ParserConfig;
+
+// These are equivalent - strict mode is the default
+$config = Toml::parse($toml);
+$config = Toml::parse($toml, ParserConfig::strict());
+```
+
+### Lenient Mode
+
+In lenient mode, the parser attempts to continue parsing after encountering spec violations (like duplicate keys or table redefinitions). Violations are collected as warnings that you can retrieve after parsing.
+
+Use cases:
+- IDE tooling that needs to show all issues
+- Migration tools analyzing legacy TOML files
+- Linters reporting multiple violations
+
+```php
+use AppHive\Toml\Toml;
+use AppHive\Toml\Parser\ParserConfig;
+
+// Create a parser with lenient mode to access warnings
+$parser = Toml::createParser($toml, ParserConfig::lenient());
+$result = $parser->parse();
+$warnings = $parser->getWarnings();
+
+foreach ($warnings as $warning) {
+    echo $warning->getMessage();
+    echo $warning->getErrorLine();
+    echo $warning->getErrorColumn();
+}
+```
+
+For files:
+
+```php
+$parser = Toml::createParserForFile('/path/to/config.toml', ParserConfig::lenient());
+$result = $parser->parse();
+$warnings = $parser->getWarnings();
+```
+
+**Note:** Syntax errors (malformed tokens, unexpected characters) always throw exceptions regardless of mode. Only semantic violations (like duplicate keys or table redefinitions) can be collected as warnings.
+
 ## Exception Handling
 
 The parser throws `TomlParseException` for invalid TOML input. The exception provides detailed error information including line and column numbers:
