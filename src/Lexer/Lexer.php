@@ -58,7 +58,7 @@ final class Lexer
 
         // Validate that control characters are not present in bare document content
         // Control characters must be inside strings (escaped) or are simply not allowed
-        $this->validateBareControlCharacter($char);
+        $this->validateControlCharacter($char, 'TOML documents');
 
         // Handle comments
         if ($char === '#') {
@@ -170,7 +170,7 @@ final class Lexer
             if ($char === '\\') {
                 $value .= $this->scanEscapeSequence();
             } else {
-                $this->validateControlCharacter($char);
+                $this->validateControlCharacter($char, 'basic strings');
                 $value .= $this->advance();
             }
         }
@@ -183,62 +183,30 @@ final class Lexer
         );
     }
 
-    private function validateControlCharacter(string $char): void
-    {
-        $ord = ord($char);
-        // Control characters U+0000 to U+001F are not allowed, except tab (U+0009)
-        // Also U+007F (DEL) is not allowed
-        if (($ord <= 0x1F && $ord !== 0x09) || $ord === 0x7F) {
-            throw new TomlParseException(
-                sprintf('Control character U+%04X is not allowed in basic strings', $ord),
-                $this->line,
-                $this->column,
-                $this->source
-            );
-        }
-    }
-
-    private function validateLiteralControlCharacter(string $char): void
-    {
-        $ord = ord($char);
-        // In literal strings, tab (U+0009) is allowed, but other control chars are not
-        // Control characters U+0000 to U+001F (except tab) and U+007F (DEL) are not allowed
-        if (($ord <= 0x1F && $ord !== 0x09) || $ord === 0x7F) {
-            throw new TomlParseException(
-                sprintf('Control character U+%04X is not allowed in literal strings', $ord),
-                $this->line,
-                $this->column,
-                $this->source
-            );
-        }
-    }
-
     /**
-     * Validate that a character is not a control character appearing as bare document content.
-     * Control characters are not allowed outside of strings (where they must be escaped).
-     * Allowed: newline (U+000A), carriage return followed by newline (CRLF), and tab (U+0009).
-     * Tab is only allowed as whitespace, not in bare keys or values.
+     * Validate that a character is not a disallowed control character.
+     *
+     * @param string $char The character to validate
+     * @param string $context The context for error messages (e.g., 'basic strings', 'TOML documents')
      */
-    private function validateBareControlCharacter(string $char): void
+    private function validateControlCharacter(string $char, string $context): void
     {
         $ord = ord($char);
-        // Control characters U+0000 to U+001F are not allowed in bare document content
-        // Exceptions:
-        // - Tab (U+0009) is allowed as whitespace (handled by skipWhitespace)
-        // - Newline (U+000A) is a valid token
-        // - Carriage return (U+000D) is only allowed when followed by newline (CRLF)
-        // U+007F (DEL) is also not allowed
-        if ($ord <= 0x1F && $ord !== 0x09 && $ord !== 0x0A && $ord !== 0x0D) {
-            throw new TomlParseException(
-                sprintf('Control character U+%04X is not allowed in TOML documents', $ord),
-                $this->line,
-                $this->column,
-                $this->source
-            );
+
+        // Allowed characters vary by context:
+        // - 'TOML documents': tab (0x09), newline (0x0A), carriage return (0x0D)
+        // - All other contexts: tab (0x09) only
+        $allowed = $context === 'TOML documents'
+            ? [0x09, 0x0A, 0x0D]
+            : [0x09];
+
+        if (in_array($ord, $allowed, true)) {
+            return;
         }
-        if ($ord === 0x7F) {
+
+        if ($ord <= 0x1F || $ord === 0x7F) {
             throw new TomlParseException(
-                'Control character U+007F (DEL) is not allowed in TOML documents',
+                sprintf('Control character U+%04X is not allowed in %s', $ord, $context),
                 $this->line,
                 $this->column,
                 $this->source
@@ -308,7 +276,7 @@ final class Lexer
                 $this->line++;
                 $this->column = 1;
             } else {
-                $this->validateControlCharacter($char);
+                $this->validateControlCharacter($char, 'basic strings');
                 $value .= $this->advance();
             }
         }
@@ -509,7 +477,7 @@ final class Lexer
                 );
             }
 
-            $this->validateLiteralControlCharacter($char);
+            $this->validateControlCharacter($char, 'literal strings');
             $value .= $this->advance();
         }
 
@@ -573,7 +541,7 @@ final class Lexer
                 $this->line++;
                 $this->column = 1;
             } else {
-                $this->validateLiteralControlCharacter($char);
+                $this->validateControlCharacter($char, 'literal strings');
                 $value .= $this->advance();
             }
         }
@@ -1027,11 +995,21 @@ final class Lexer
         return $digits;
     }
 
-    private function scanHexNumber(int $line, int $column, string $prefix): Token
-    {
+    /**
+     * Scan a prefixed integer number (hex, octal, or binary).
+     *
+     * @param callable(string): bool $isValidDigit Function to validate if a character is a valid digit
+     */
+    private function scanPrefixedNumber(
+        int $line,
+        int $column,
+        string $prefix,
+        string $prefixName,
+        callable $isValidDigit
+    ): Token {
         $value = $prefix;
         $value .= $this->advance(); // consume '0'
-        $value .= $this->advance(); // consume 'x'
+        $value .= $this->advance(); // consume prefix char (x/o/b)
 
         $lastWasUnderscore = false;
         $hasDigits = false;
@@ -1039,7 +1017,7 @@ final class Lexer
         // Check for leading underscore after prefix
         if ($this->peek() === '_') {
             throw new TomlParseException(
-                'Underscore immediately after hex prefix is not allowed',
+                "Underscore immediately after {$prefixName} prefix is not allowed",
                 $line,
                 $this->column,
                 $this->source
@@ -1048,12 +1026,11 @@ final class Lexer
 
         while (! $this->isAtEnd()) {
             $char = $this->peek();
-            if (ctype_xdigit($char)) {
+            if ($isValidDigit($char)) {
                 $value .= $this->advance();
                 $lastWasUnderscore = false;
                 $hasDigits = true;
             } elseif ($char === '_') {
-                // Reject double underscore
                 if ($lastWasUnderscore) {
                     throw new TomlParseException(
                         'Double underscore is not allowed in integers',
@@ -1069,7 +1046,6 @@ final class Lexer
             }
         }
 
-        // Reject trailing underscore
         if ($lastWasUnderscore) {
             throw new TomlParseException(
                 'Trailing underscore is not allowed in integers',
@@ -1079,10 +1055,9 @@ final class Lexer
             );
         }
 
-        // Reject incomplete hex (0x with no digits)
         if (! $hasDigits) {
             throw new TomlParseException(
-                'Hexadecimal integer must have at least one digit after prefix',
+                ucfirst($prefixName).' integer must have at least one digit after prefix',
                 $line,
                 $column,
                 $this->source
@@ -1090,136 +1065,33 @@ final class Lexer
         }
 
         return new Token(TokenType::Integer, $value, $line, $column);
+    }
+
+    private function scanHexNumber(int $line, int $column, string $prefix): Token
+    {
+        return $this->scanPrefixedNumber($line, $column, $prefix, 'hex', ctype_xdigit(...));
     }
 
     private function scanOctalNumber(int $line, int $column, string $prefix): Token
     {
-        $value = $prefix;
-        $value .= $this->advance(); // consume '0'
-        $value .= $this->advance(); // consume 'o'
-
-        $lastWasUnderscore = false;
-        $hasDigits = false;
-
-        // Check for leading underscore after prefix
-        if ($this->peek() === '_') {
-            throw new TomlParseException(
-                'Underscore immediately after octal prefix is not allowed',
-                $line,
-                $this->column,
-                $this->source
-            );
-        }
-
-        while (! $this->isAtEnd()) {
-            $char = $this->peek();
-            if ($char >= '0' && $char <= '7') {
-                $value .= $this->advance();
-                $lastWasUnderscore = false;
-                $hasDigits = true;
-            } elseif ($char === '_') {
-                // Reject double underscore
-                if ($lastWasUnderscore) {
-                    throw new TomlParseException(
-                        'Double underscore is not allowed in integers',
-                        $line,
-                        $this->column,
-                        $this->source
-                    );
-                }
-                $this->advance();
-                $lastWasUnderscore = true;
-            } else {
-                break;
-            }
-        }
-
-        // Reject trailing underscore
-        if ($lastWasUnderscore) {
-            throw new TomlParseException(
-                'Trailing underscore is not allowed in integers',
-                $line,
-                $this->column - 1,
-                $this->source
-            );
-        }
-
-        // Reject incomplete octal (0o with no digits)
-        if (! $hasDigits) {
-            throw new TomlParseException(
-                'Octal integer must have at least one digit after prefix',
-                $line,
-                $column,
-                $this->source
-            );
-        }
-
-        return new Token(TokenType::Integer, $value, $line, $column);
+        return $this->scanPrefixedNumber(
+            $line,
+            $column,
+            $prefix,
+            'octal',
+            fn (string $c): bool => $c >= '0' && $c <= '7'
+        );
     }
 
     private function scanBinaryNumber(int $line, int $column, string $prefix): Token
     {
-        $value = $prefix;
-        $value .= $this->advance(); // consume '0'
-        $value .= $this->advance(); // consume 'b'
-
-        $lastWasUnderscore = false;
-        $hasDigits = false;
-
-        // Check for leading underscore after prefix
-        if ($this->peek() === '_') {
-            throw new TomlParseException(
-                'Underscore immediately after binary prefix is not allowed',
-                $line,
-                $this->column,
-                $this->source
-            );
-        }
-
-        while (! $this->isAtEnd()) {
-            $char = $this->peek();
-            if ($char === '0' || $char === '1') {
-                $value .= $this->advance();
-                $lastWasUnderscore = false;
-                $hasDigits = true;
-            } elseif ($char === '_') {
-                // Reject double underscore
-                if ($lastWasUnderscore) {
-                    throw new TomlParseException(
-                        'Double underscore is not allowed in integers',
-                        $line,
-                        $this->column,
-                        $this->source
-                    );
-                }
-                $this->advance();
-                $lastWasUnderscore = true;
-            } else {
-                break;
-            }
-        }
-
-        // Reject trailing underscore
-        if ($lastWasUnderscore) {
-            throw new TomlParseException(
-                'Trailing underscore is not allowed in integers',
-                $line,
-                $this->column - 1,
-                $this->source
-            );
-        }
-
-        // Reject incomplete binary (0b with no digits)
-        if (! $hasDigits) {
-            throw new TomlParseException(
-                'Binary integer must have at least one digit after prefix',
-                $line,
-                $column,
-                $this->source
-            );
-        }
-
-        return new Token(TokenType::Integer, $value, $line, $column);
+        return $this->scanPrefixedNumber(
+            $line,
+            $column,
+            $prefix,
+            'binary',
+            fn (string $c): bool => $c === '0' || $c === '1'
+        );
     }
 
     private function scanInfNan(int $line, int $column): Token
@@ -1303,23 +1175,8 @@ final class Lexer
         while (! $this->isAtEnd() && $this->peek() !== "\n" && $this->peek() !== "\r") {
             $char = $this->peek();
             assert($char !== null);
-            $this->validateCommentControlCharacter($char);
+            $this->validateControlCharacter($char, 'comments');
             $this->advance();
-        }
-    }
-
-    private function validateCommentControlCharacter(string $char): void
-    {
-        $ord = ord($char);
-        // Control characters U+0000 to U+001F are not allowed, except tab (U+0009)
-        // Also U+007F (DEL) is not allowed
-        if (($ord <= 0x1F && $ord !== 0x09) || $ord === 0x7F) {
-            throw new TomlParseException(
-                sprintf('Control character U+%04X is not allowed in comments', $ord),
-                $this->line,
-                $this->column,
-                $this->source
-            );
         }
     }
 

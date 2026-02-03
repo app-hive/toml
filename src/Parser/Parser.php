@@ -8,6 +8,7 @@ use AppHive\Toml\Exceptions\TomlParseException;
 use AppHive\Toml\Lexer\Lexer;
 use AppHive\Toml\Lexer\Token;
 use AppHive\Toml\Lexer\TokenType;
+use AppHive\Toml\Utilities\SnippetBuilder;
 
 final class Parser
 {
@@ -172,49 +173,10 @@ final class Parser
             throw new TomlParseException($message, $line, $column, $this->source);
         }
 
-        $snippet = $this->buildSnippet($line, $column);
+        $snippet = SnippetBuilder::build($this->source, $line, $column);
         $this->warnings[] = new ParserWarning($message, $line, $column, $snippet);
 
         return true;
-    }
-
-    /**
-     * Build a source code snippet for error context.
-     */
-    private function buildSnippet(int $line, int $column): string
-    {
-        if ($this->source === '' || $line === 0) {
-            return '';
-        }
-
-        $lines = explode("\n", $this->source);
-        $totalLines = count($lines);
-
-        if ($line > $totalLines) {
-            return '';
-        }
-
-        $snippetLines = [];
-        $contextLines = 2;
-
-        $startLine = max(1, $line - $contextLines);
-        $endLine = min($totalLines, $line + $contextLines);
-
-        $lineNumberWidth = strlen((string) $endLine);
-
-        for ($i = $startLine; $i <= $endLine; $i++) {
-            $lineContent = $lines[$i - 1];
-            $lineNumber = str_pad((string) $i, $lineNumberWidth, ' ', STR_PAD_LEFT);
-            $prefix = $i === $line ? '> ' : '  ';
-            $snippetLines[] = sprintf('%s%s | %s', $prefix, $lineNumber, $lineContent);
-
-            if ($i === $line && $column > 0) {
-                $pointerPadding = str_repeat(' ', strlen($prefix) + $lineNumberWidth + 3 + $column - 1);
-                $snippetLines[] = $pointerPadding.'^';
-            }
-        }
-
-        return implode("\n", $snippetLines);
     }
 
     /**
