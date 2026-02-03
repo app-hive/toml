@@ -6,73 +6,35 @@ use AppHive\Toml\Exceptions\TomlParseException;
 use AppHive\Toml\Toml;
 
 /**
- * Known limitations in the TOML parser that cause invalid test cases to pass (not reject).
- * These are documented for future improvement and tracked for spec compliance.
+ * Tests that are "invalid" according to TOML 1.0 but valid in TOML 1.1.0.
  *
- * Categories of known issues:
- * - Control characters: Parser doesn't reject all invalid control characters in strings/comments
- * - Datetime validation: Parser doesn't validate datetime ranges (e.g., Feb 30, hour > 23)
- * - Float validation: Parser doesn't reject all invalid underscore positions in floats
- * - Integer validation: Parser doesn't reject all invalid integer formats
- * - Array/table semantics: Parser doesn't catch all invalid array/table combinations
- * - Unicode escapes: Parser doesn't validate all unicode escape sequences
+ * This parser implements TOML 1.1.0, which introduced several new features that
+ * make previously invalid syntax valid. These tests are skipped because they
+ * test for rejection of syntax that is now allowed.
+ *
+ * TOML 1.1.0 features that cause "invalid" tests to pass:
+ * - Optional seconds in times: `HH:MM` is valid (seconds are optional)
+ * - Newlines in inline tables: Multi-line inline tables are allowed
+ * - Trailing commas in inline tables: `{ a = 1, }` is valid
+ * - Byte escapes in strings: `\xNN` escape sequences are supported
  */
 const KNOWN_INVALID_FAILURES = [
-    // Multiline string CR handling - bare CR in multiline strings is treated as newline
-    'control / multi-cr',
-    'control / rawmulti-cr',
-    // Tests from control.multi file - these contain literal \xNN sequences as text, not actual control chars
-    // The .multi file format expects pre-processing that isn't being done
-    'control / control / comment-cr',
-    'control / control / comment-del',
-    'control / control / comment-ff',
-    'control / control / comment-lf',
-    'control / control / comment-null',
-    'control / control / comment-us',
-    'control / control / multi-cr',
-    'control / control / multi-del',
-    'control / control / multi-lf',
-    'control / control / multi-null',
-    'control / control / multi-us',
-    'control / control / rawmulti-cr',
-    'control / control / rawmulti-del',
-    'control / control / rawmulti-lf',
-    'control / control / rawmulti-null',
-    'control / control / rawmulti-us',
-    'control / control / rawstring-cr',
-    'control / control / rawstring-del',
-    'control / control / rawstring-lf',
-    'control / control / rawstring-null',
-    'control / control / rawstring-us',
-    'control / control / string-bs',
-    'control / control / string-cr',
-    'control / control / string-del',
-    'control / control / string-lf',
-    'control / control / string-null',
-    'control / control / string-us',
+    // TOML 1.1.0 allows optional seconds in time values (HH:MM format)
+    'datetime / no-secs',
+    'local-datetime / no-secs',
+    'local-time / no-secs',
 
-    // Datetime validation - TOML 1.1.0 allows optional seconds (HH:MM format)
-    'datetime / no-secs', // TOML 1.1.0 allows optional seconds
-    'local-datetime / no-secs', // TOML 1.1.0 allows optional seconds
-    'local-time / no-secs', // TOML 1.1.0 allows optional seconds
+    // TOML 1.1.0 allows newlines within inline tables
+    'inline-table / linebreak-01',
+    'inline-table / linebreak-02',
+    'inline-table / linebreak-03',
+    'inline-table / linebreak-04',
 
-    // Inline table validation - TOML 1.1.0 allows newlines and trailing commas in inline tables
-    'inline-table / linebreak-01', // Valid in TOML 1.1.0
-    'inline-table / linebreak-02', // Valid in TOML 1.1.0
-    'inline-table / linebreak-03', // Valid in TOML 1.1.0
-    'inline-table / linebreak-04', // Valid in TOML 1.1.0
-    'inline-table / trailing-comma', // Valid in TOML 1.1.0
+    // TOML 1.1.0 allows trailing commas in inline tables
+    'inline-table / trailing-comma',
 
-    // Array/table semantic validation
-    'array / extend-defined-aot',
-    'array / extending-table',
-
-    // String/Unicode escape validation - TOML 1.1.0 allows \xNN byte escapes
+    // TOML 1.1.0 allows \xNN byte escape sequences in basic strings
     'string / basic-byte-escapes',
-
-    // Spec tests
-    'spec-1.0.0 / inline-table-2-0',
-    'spec-1.1.0 / common-49-0',
 ];
 
 /**
@@ -110,6 +72,7 @@ function getInvalidTestCases(): array
         }
 
         // Handle .multi files - each non-empty line is a separate invalid case
+        // Note: .multi files contain \xNN sequences that need to be converted to actual bytes
         if ($extension === 'multi') {
             $relativePath = str_replace($testDir.'/', '', $path);
             $baseName = str_replace(['/', '.multi'], [' / ', ''], $relativePath);
@@ -133,7 +96,14 @@ function getInvalidTestCases(): array
                 $parts = explode('=', $line);
                 $keyName = trim($parts[0]);
 
-                $cases["{$baseName} / {$keyName}"] = $line;
+                // Convert \xNN sequences to actual bytes (per toml-test .multi format)
+                $processedLine = preg_replace_callback(
+                    '/\\\\x([0-9a-fA-F]{2})/',
+                    fn ($matches) => chr((int) hexdec($matches[1])),
+                    $line
+                );
+
+                $cases["{$baseName} / {$keyName}"] = $processedLine;
             }
         }
     }

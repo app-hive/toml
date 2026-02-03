@@ -539,6 +539,19 @@ final class Parser
             return;
         }
 
+        // Check if this path or any parent path is a static array (cannot extend)
+        for ($i = 0; $i < count($keyParts); $i++) {
+            $partialPath = implode('.', array_slice($keyParts, 0, $i + 1));
+            if (isset($this->staticArrayPaths[$partialPath])) {
+                throw new TomlParseException(
+                    "Cannot define table under '{$partialPath}' because it is a static array",
+                    $startToken->line,
+                    $startToken->column,
+                    $this->source
+                );
+            }
+        }
+
         // Check if this table was already explicitly defined
         if (isset($this->definedTables[$tablePath])) {
             $this->reportViolation(
