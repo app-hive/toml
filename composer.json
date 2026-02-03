@@ -1,6 +1,6 @@
 {
     "name": "app-hive/toml",
-    "description": "Toml parser for PHP",
+    "description": "A fast, lightweight TOML parser for PHP with TOML 1.1.0 support.",
     "type": "library",
     "license": "MIT",
     "authors": [
