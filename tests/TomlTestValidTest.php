@@ -19,12 +19,8 @@ const KNOWN_VALID_FAILURES = [
     // instead of treating them as bare keys in key position. Fixing requires context-aware lexing.
     'key / alphanum',         // Uses all-digit keys like "123", "000111", "10e3"
     'key / like-date',        // Uses date-like keys like "1979-05-27"
-    'key / special-word',     // Uses "true", "false", "inf", "nan" as keys
     'key / start',            // Uses numeric keys in table headers like [2018_10]
-    'table / keyword',        // Uses [true], [false], [inf], [nan] as table names
-    'table / keyword-with-values', // Same issue with keyword table names
     'datetime / leap-year',   // Uses date-like keys like "2000-datetime"
-    'comment / after-literal-no-ws', // Uses "inf", "nan", "true", "false" as keys
 
     // Test suite inconsistency: datetime/milliseconds expects ".6" -> ".600" (padded)
     // but spec-1.1.0/common-27 expects ".5" -> ".5" (preserved). We preserve precision.

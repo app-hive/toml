@@ -864,6 +864,14 @@ final class Parser
             return $token->value;
         }
 
+        // Boolean tokens (true, false) and special float keywords (inf, nan)
+        // are valid as bare keys - they're only special in value position
+        if ($token->type === TokenType::Boolean) {
+            $this->advance();
+
+            return $token->value;
+        }
+
         throw new TomlParseException(
             "Expected key, got {$token->type->value}",
             $token->line,
@@ -1623,7 +1631,8 @@ final class Parser
             || $type === TokenType::BasicString
             || $type === TokenType::LiteralString
             || $type === TokenType::Integer
-            || $type === TokenType::Float;
+            || $type === TokenType::Float
+            || $type === TokenType::Boolean;
     }
 
     /**
