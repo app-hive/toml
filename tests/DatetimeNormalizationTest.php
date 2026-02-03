@@ -44,12 +44,12 @@ describe('datetime RFC 3339 normalization', function () {
             expect(Toml::parse('odt = 1987-07-05T17:45:56.123Z'))->toBe(['odt' => '1987-07-05T17:45:56.123Z']);
         });
 
-        it('pads fractional seconds to milliseconds (single digit)', function () {
-            expect(Toml::parse('odt = 1987-07-05T17:45:56.6Z'))->toBe(['odt' => '1987-07-05T17:45:56.600Z']);
+        it('preserves single digit fractional seconds', function () {
+            expect(Toml::parse('odt = 1987-07-05T17:45:56.6Z'))->toBe(['odt' => '1987-07-05T17:45:56.6Z']);
         });
 
-        it('pads fractional seconds to milliseconds (two digits)', function () {
-            expect(Toml::parse('odt = 1987-07-05T17:45:56.12Z'))->toBe(['odt' => '1987-07-05T17:45:56.120Z']);
+        it('preserves two digit fractional seconds', function () {
+            expect(Toml::parse('odt = 1987-07-05T17:45:56.12Z'))->toBe(['odt' => '1987-07-05T17:45:56.12Z']);
         });
 
         it('preserves fractional seconds precision (six digits)', function () {
@@ -107,8 +107,8 @@ describe('datetime RFC 3339 normalization', function () {
             expect(Toml::parse('lt = 10:32:00.555'))->toBe(['lt' => '10:32:00.555']);
         });
 
-        it('pads fractional seconds to milliseconds', function () {
-            expect(Toml::parse('lt = 10:32:00.6'))->toBe(['lt' => '10:32:00.600']);
+        it('preserves single digit fractional seconds', function () {
+            expect(Toml::parse('lt = 10:32:00.6'))->toBe(['lt' => '10:32:00.6']);
         });
 
         it('adds missing seconds', function () {

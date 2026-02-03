@@ -15,47 +15,25 @@ use AppHive\Toml\Toml;
  * - TOML 1.1.0 features: Some TOML 1.1.0 spec features not fully supported
  */
 const KNOWN_VALID_FAILURES = [
-    // Numeric bare keys - some tests still need work (date-like keys, special words, etc.)
-    'key / alphanum',
-    'key / like-date',
-    'key / special-word',
-    'key / start',
-    'key / zero',
-    'spec-1.0.0 / keys-0',
-    'spec-1.0.0 / keys-7',
-    'spec-1.1.0 / common-3',
-    'spec-1.1.0 / common-11',
-    'spec-1.1.0 / common-12',
-    'table / keyword',
-    'table / keyword-with-values',
-    'table / names',
-    'table / names-with-values',
+    // Bare keys that look like other token types - the lexer tokenizes these as keywords/numbers
+    // instead of treating them as bare keys in key position. Fixing requires context-aware lexing.
+    'key / alphanum',         // Uses all-digit keys like "123", "000111", "10e3"
+    'key / like-date',        // Uses date-like keys like "1979-05-27"
+    'key / special-word',     // Uses "true", "false", "inf", "nan" as keys
+    'key / start',            // Uses numeric keys in table headers like [2018_10]
+    'table / keyword',        // Uses [true], [false], [inf], [nan] as table names
+    'table / keyword-with-values', // Same issue with keyword table names
+    'datetime / leap-year',   // Uses date-like keys like "2000-datetime"
+    'comment / after-literal-no-ws', // Uses "inf", "nan", "true", "false" as keys
 
-    // Datetime tests with numeric bare keys (not datetime normalization issues)
-    'datetime / leap-year', // Uses keys like "2000-datetime" which are numeric bare keys
-
-    // String handling
-    'string / ends-in-whitespace-escape',
-    'string / hex-escape',
-
-    // Table/array handling edge cases
+    // Array of tables with subtables: [arr.subtab] after [[arr]] should apply to
+    // the current array element, allowing repeated [arr.subtab] definitions
     'array / array-subtables',
     'table / array-table-array',
 
-    // Comment handling edge cases
-    'comment / after-literal-no-ws',
-    'comment / tricky',
-
-    // TOML 1.1.0 - Other features
-    'spec-1.1.0 / common-28',
-    'spec-1.1.0 / common-29',
-    'spec-1.1.0 / common-31',
-    'spec-1.1.0 / common-34',
-
-    // TOML 1.1.0 - Fractional seconds normalization (these expect no padding, but milliseconds test expects padding)
-    'spec-1.1.0 / common-27',
-    'spec-1.1.0 / common-30',
-    'spec-1.1.0 / common-33',
+    // Test suite inconsistency: datetime/milliseconds expects ".6" -> ".600" (padded)
+    // but spec-1.1.0/common-27 expects ".5" -> ".5" (preserved). We preserve precision.
+    'datetime / milliseconds',
 ];
 
 /**

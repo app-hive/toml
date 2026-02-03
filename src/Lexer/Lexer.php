@@ -388,7 +388,8 @@ final class Lexer
             $hex .= $this->advance();
         }
 
-        return chr((int) hexdec($hex));
+        // Convert to UTF-8 encoded character (treats \xNN as Unicode code point 0x00-0xFF)
+        return mb_chr((int) hexdec($hex), 'UTF-8');
     }
 
     private function scanUnicodeEscape(int $length): string

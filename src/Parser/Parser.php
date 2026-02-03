@@ -78,11 +78,53 @@ final class Parser
      * Track paths implicitly created as tables by array of tables headers.
      * For example, [[a.b]] implicitly creates 'a' as a table.
      * These cannot later be defined as array of tables.
-     * Keys are dot-joined paths.
+     * Keys are null-byte-joined paths.
      *
      * @var array<string, bool>
      */
     private array $implicitTablesByArrayOfTables = [];
+
+    /**
+     * Path separator for internal tracking. Uses null byte since it cannot
+     * appear in TOML keys, preventing confusion between ['a', 'b.c'] and ['a', 'b', 'c'].
+     */
+    private const PATH_SEPARATOR = "\0";
+
+    /**
+     * Build a canonical path string from key parts.
+     *
+     * @param list<string> $parts
+     */
+    private function buildPath(array $parts): string
+    {
+        return implode(self::PATH_SEPARATOR, $parts);
+    }
+
+    /**
+     * Build a canonical path string from a slice of key parts.
+     *
+     * @param list<string> $parts
+     */
+    private function buildPathSlice(array $parts, int $start, int $length): string
+    {
+        return implode(self::PATH_SEPARATOR, array_slice($parts, $start, $length));
+    }
+
+    /**
+     * Convert a canonical path to display format (dot-separated) for error messages.
+     */
+    private function displayPath(string $path): string
+    {
+        return str_replace(self::PATH_SEPARATOR, '.', $path);
+    }
+
+    /**
+     * Check if a path starts with another path (is a child).
+     */
+    private function pathStartsWith(string $path, string $prefix): bool
+    {
+        return str_starts_with($path, $prefix . self::PATH_SEPARATOR);
+    }
 
     /**
      * Create a new parser instance.
@@ -219,7 +261,7 @@ final class Parser
 
         // If the value is a static array, track it so it can't be extended with [[]]
         if ($isStaticArray && is_array($value)) {
-            $this->staticArrayPaths[implode('.', $fullKeyParts)] = true;
+            $this->staticArrayPaths[$this->buildPath($fullKeyParts)] = true;
         }
 
         // Expect newline or EOF after value
@@ -321,12 +363,12 @@ final class Parser
         $this->skipNewlines();
 
         // Build the table path string
-        $tablePath = implode('.', $keyParts);
+        $tablePath = $this->buildPath($keyParts);
 
         // Check if this path was already defined as a static array (via key = [...])
         if (isset($this->staticArrayPaths[$tablePath])) {
             throw new TomlParseException(
-                "Cannot define array of tables '{$tablePath}' because it was already defined as a static array",
+                "Cannot define array of tables '{$this->displayPath($tablePath)}' because it was already defined as a static array",
                 $startToken->line,
                 $startToken->column,
                 $this->source
@@ -336,7 +378,7 @@ final class Parser
         // Check if this path was already defined as a regular table
         if (isset($this->definedTables[$tablePath]) && ! isset($this->arrayOfTablesPaths[$tablePath])) {
             $this->reportViolation(
-                "Cannot define array of tables '{$tablePath}' because it was already defined as a table",
+                "Cannot define array of tables '{$this->displayPath($tablePath)}' because it was already defined as a table",
                 $startToken->line,
                 $startToken->column
             );
@@ -348,7 +390,7 @@ final class Parser
         // Check if this path was created by dotted keys (cannot redefine)
         if (isset($this->implicitDottedKeyTables[$tablePath])) {
             $this->reportViolation(
-                "Cannot redefine '{$tablePath}' that was implicitly defined by dotted keys",
+                "Cannot redefine '{$this->displayPath($tablePath)}' that was implicitly defined by dotted keys",
                 $startToken->line,
                 $startToken->column
             );
@@ -361,7 +403,7 @@ final class Parser
         // e.g., [[a.b]] implicitly creates 'a' as a table, so [[a]] should fail
         if (isset($this->implicitTablesByArrayOfTables[$tablePath])) {
             throw new TomlParseException(
-                "Cannot define '{$tablePath}' as array of tables because it was implicitly defined as a table",
+                "Cannot define '{$this->displayPath($tablePath)}' as array of tables because it was implicitly defined as a table",
                 $startToken->line,
                 $startToken->column,
                 $this->source
@@ -374,7 +416,7 @@ final class Parser
         // Track parent paths as implicit tables (they cannot become array of tables later)
         // For [[a.b.c]], we track 'a' and 'a.b' as implicit tables
         for ($i = 0; $i < count($keyParts) - 1; $i++) {
-            $partialPath = implode('.', array_slice($keyParts, 0, $i + 1));
+            $partialPath = $this->buildPathSlice($keyParts, 0, $i + 1);
             // Only mark as implicit table if it's not already an array of tables
             if (! isset($this->arrayOfTablesPaths[$partialPath])) {
                 $this->implicitTablesByArrayOfTables[$partialPath] = true;
@@ -403,9 +445,8 @@ final class Parser
      */
     private function clearInlineTablePathsUnder(string $arrayPath): void
     {
-        $prefix = $arrayPath.'.';
         foreach (array_keys($this->inlineTablePaths) as $path) {
-            if (str_starts_with($path, $prefix)) {
+            if ($this->pathStartsWith($path, $arrayPath)) {
                 unset($this->inlineTablePaths[$path]);
             }
         }
@@ -425,12 +466,12 @@ final class Parser
         // Navigate to the parent of the final key, handling array of tables along the way
         for ($i = 0; $i < count($keyParts) - 1; $i++) {
             $key = $keyParts[$i];
-            $partialPath = implode('.', array_slice($keyParts, 0, $i + 1));
+            $partialPath = $this->buildPathSlice($keyParts, 0, $i + 1);
 
             // Check if this path is a static array - cannot navigate into it
             if (isset($this->staticArrayPaths[$partialPath])) {
                 throw new TomlParseException(
-                    "Cannot define array of tables under '{$partialPath}' which is a static array",
+                    "Cannot define array of tables under '{$this->displayPath($partialPath)}' which is a static array",
                     $token->line,
                     $token->column,
                     $this->source
@@ -525,12 +566,12 @@ final class Parser
         $this->skipNewlines();
 
         // Build the table path string for duplicate detection
-        $tablePath = implode('.', $keyParts);
+        $tablePath = $this->buildPath($keyParts);
 
         // Check if this path was already defined as an array of tables
         if (isset($this->arrayOfTablesPaths[$tablePath])) {
             $this->reportViolation(
-                "Cannot define table '{$tablePath}' because it was already defined as an array of tables",
+                "Cannot define table '{$this->displayPath($tablePath)}' because it was already defined as an array of tables",
                 $startToken->line,
                 $startToken->column
             );
@@ -541,10 +582,10 @@ final class Parser
 
         // Check if this path or any parent path is a static array (cannot extend)
         for ($i = 0; $i < count($keyParts); $i++) {
-            $partialPath = implode('.', array_slice($keyParts, 0, $i + 1));
+            $partialPath = $this->buildPathSlice($keyParts, 0, $i + 1);
             if (isset($this->staticArrayPaths[$partialPath])) {
                 throw new TomlParseException(
-                    "Cannot define table under '{$partialPath}' because it is a static array",
+                    "Cannot define table under '{$this->displayPath($partialPath)}' because it is a static array",
                     $startToken->line,
                     $startToken->column,
                     $this->source
@@ -555,7 +596,7 @@ final class Parser
         // Check if this table was already explicitly defined
         if (isset($this->definedTables[$tablePath])) {
             $this->reportViolation(
-                "Table '{$tablePath}' already defined",
+                "Table '{$this->displayPath($tablePath)}' already defined",
                 $startToken->line,
                 $startToken->column
             );
@@ -565,7 +606,7 @@ final class Parser
         // Check if this path was created by dotted keys (cannot redefine)
         if (isset($this->implicitDottedKeyTables[$tablePath])) {
             $this->reportViolation(
-                "Cannot redefine table '{$tablePath}' that was implicitly defined by dotted keys",
+                "Cannot redefine table '{$this->displayPath($tablePath)}' that was implicitly defined by dotted keys",
                 $startToken->line,
                 $startToken->column
             );
@@ -599,7 +640,7 @@ final class Parser
 
         for ($i = 0; $i < count($keyParts); $i++) {
             $key = $keyParts[$i];
-            $partialPath = implode('.', array_slice($keyParts, 0, $i + 1));
+            $partialPath = $this->buildPathSlice($keyParts, 0, $i + 1);
 
             if (! isset($current[$key])) {
                 $current[$key] = [];
@@ -623,7 +664,7 @@ final class Parser
                 $arrayValue = &$current[$key];
                 if (empty($arrayValue)) {
                     throw new TomlParseException(
-                        "Cannot define sub-table under empty array of tables '{$partialPath}'",
+                        "Cannot define sub-table under empty array of tables '{$this->displayPath($partialPath)}'",
                         $token->line,
                         $token->column,
                         $this->source
@@ -653,7 +694,7 @@ final class Parser
 
         for ($i = 0; $i < count($keyParts) - 1; $i++) {
             $basePath[] = $keyParts[$i];
-            $pathStr = implode('.', $basePath);
+            $pathStr = $this->buildPath($basePath);
             $this->implicitDottedKeyTables[$pathStr] = true;
         }
     }
@@ -670,11 +711,11 @@ final class Parser
     {
         // Check each prefix path to see if any parent is an inline table
         for ($i = 1; $i <= count($keyParts); $i++) {
-            $partialPath = implode('.', array_slice($keyParts, 0, $i));
+            $partialPath = $this->buildPathSlice($keyParts, 0, $i);
 
             if (isset($this->inlineTablePaths[$partialPath])) {
                 throw new TomlParseException(
-                    "Cannot extend inline table '{$partialPath}' - inline tables are immutable",
+                    "Cannot extend inline table '{$this->displayPath($partialPath)}' - inline tables are immutable",
                     $token->line,
                     $token->column,
                     $this->source
@@ -691,7 +732,7 @@ final class Parser
      */
     private function trackInlineTablePaths(array $keyParts, array $table): void
     {
-        $basePath = implode('.', $keyParts);
+        $basePath = $this->buildPath($keyParts);
         $this->inlineTablePaths[$basePath] = true;
 
         // Recursively track all nested paths
@@ -815,17 +856,17 @@ final class Parser
         // Navigate/create intermediate tables
         for ($i = 0; $i < count($keyParts) - 1; $i++) {
             $key = $keyParts[$i];
-            $partialPath = implode('.', array_slice($keyParts, 0, $i + 1));
+            $partialPath = $this->buildPathSlice($keyParts, 0, $i + 1);
 
             // Check if this path was explicitly defined as a table and we're trying to extend it
             // from a different (parent) table context using dotted keys
             if (isset($this->definedTables[$partialPath])) {
                 // If we're in a different table context trying to add via dotted keys, reject it
-                $currentTablePathStr = implode('.', $this->currentTablePath);
-                if ($partialPath !== $currentTablePathStr && ! str_starts_with($currentTablePathStr, $partialPath.'.')) {
+                $currentTablePathStr = $this->buildPath($this->currentTablePath);
+                if ($partialPath !== $currentTablePathStr && ! $this->pathStartsWith($currentTablePathStr, $partialPath)) {
                     $token = $this->peek();
                     throw new TomlParseException(
-                        "Cannot add keys to table '{$partialPath}' using dotted keys from table '{$currentTablePathStr}' - table was already explicitly defined",
+                        "Cannot add keys to table '{$this->displayPath($partialPath)}' using dotted keys from table '{$this->displayPath($currentTablePathStr)}' - table was already explicitly defined",
                         $token->line,
                         $token->column,
                         $this->source
@@ -836,12 +877,12 @@ final class Parser
             // Check if this path is an array of tables and we're trying to extend it
             // from a different table context using dotted keys
             if (isset($this->arrayOfTablesPaths[$partialPath])) {
-                $currentTablePathStr = implode('.', $this->currentTablePath);
+                $currentTablePathStr = $this->buildPath($this->currentTablePath);
                 // If we're not inside this array of tables path, reject
-                if (! str_starts_with($currentTablePathStr, $partialPath)) {
+                if ($currentTablePathStr !== $partialPath && ! $this->pathStartsWith($currentTablePathStr, $partialPath)) {
                     $token = $this->peek();
                     throw new TomlParseException(
-                        "Cannot add keys to array of tables '{$partialPath}' using dotted keys from table '{$currentTablePathStr}'",
+                        "Cannot add keys to array of tables '{$this->displayPath($partialPath)}' using dotted keys from table '{$this->displayPath($currentTablePathStr)}'",
                         $token->line,
                         $token->column,
                         $this->source
@@ -873,7 +914,7 @@ final class Parser
                 if (empty($arrayValue)) {
                     $token = $this->peek();
                     throw new TomlParseException(
-                        "Cannot set value under empty array of tables '{$partialPath}'",
+                        "Cannot set value under empty array of tables '{$this->displayPath($partialPath)}'",
                         $token->line,
                         $token->column,
                         $this->source
@@ -1154,8 +1195,7 @@ final class Parser
 
     /**
      * Normalize a time component (HH:MM:SS or HH:MM with optional fractional seconds).
-     * Fractional seconds are padded to at least millisecond precision (3 digits)
-     * as per TOML spec requirement for implementations to support millisecond precision.
+     * Preserves the original precision of fractional seconds as-is.
      */
     private function normalizeTimeComponent(string $time): string
     {
@@ -1164,10 +1204,7 @@ final class Parser
             [$timePart, $fraction] = explode('.', $time, 2);
             $normalizedTime = $this->ensureSeconds($timePart);
 
-            // Pad to at least millisecond precision (3 digits)
-            $normalizedFraction = str_pad($fraction, 3, '0');
-
-            return $normalizedTime.'.'.$normalizedFraction;
+            return $normalizedTime.'.'.$fraction;
         }
 
         return $this->ensureSeconds($time);
@@ -1386,11 +1423,11 @@ final class Parser
 
         // Check if any prefix path is immutable (defined as inline table or within one)
         for ($i = 1; $i <= count($keyParts); $i++) {
-            $partialPath = implode('.', array_slice($keyParts, 0, $i));
+            $partialPath = $this->buildPathSlice($keyParts, 0, $i);
 
             if (isset($immutablePaths[$partialPath])) {
                 throw new TomlParseException(
-                    "Cannot extend value '{$partialPath}' - inline tables are immutable",
+                    "Cannot extend value '{$this->displayPath($partialPath)}' - inline tables are immutable",
                     $startToken->line,
                     $startToken->column,
                     $this->source
@@ -1434,12 +1471,12 @@ final class Parser
 
         // If the value is an inline table (array with string keys), mark it and its implicit paths as immutable
         if (is_array($value)) {
-            $fullPath = implode('.', $keyParts);
+            $fullPath = $this->buildPath($keyParts);
             $immutablePaths[$fullPath] = true;
 
             // Also mark all intermediate paths from dotted keys as immutable
             for ($i = 0; $i < count($keyParts) - 1; $i++) {
-                $partialPath = implode('.', array_slice($keyParts, 0, $i + 1));
+                $partialPath = $this->buildPathSlice($keyParts, 0, $i + 1);
                 $immutablePaths[$partialPath] = true;
             }
 
