@@ -872,6 +872,16 @@ final class Parser
             return $token->value;
         }
 
+        // Datetime tokens are valid as bare keys - they're only special in value position
+        if ($token->type === TokenType::LocalDate
+            || $token->type === TokenType::LocalDateTime
+            || $token->type === TokenType::OffsetDateTime
+            || $token->type === TokenType::LocalTime) {
+            $this->advance();
+
+            return $token->value;
+        }
+
         throw new TomlParseException(
             "Expected key, got {$token->type->value}",
             $token->line,
@@ -1632,7 +1642,11 @@ final class Parser
             || $type === TokenType::LiteralString
             || $type === TokenType::Integer
             || $type === TokenType::Float
-            || $type === TokenType::Boolean;
+            || $type === TokenType::Boolean
+            || $type === TokenType::LocalDate
+            || $type === TokenType::LocalDateTime
+            || $type === TokenType::OffsetDateTime
+            || $type === TokenType::LocalTime;
     }
 
     /**

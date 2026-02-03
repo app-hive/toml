@@ -7,21 +7,8 @@ use AppHive\Toml\Toml;
 /**
  * Known limitations in the TOML parser that cause valid test cases to fail.
  * These are documented for future improvement and tracked for spec compliance.
- *
- * Categories of known issues:
- * - Numeric bare keys: Keys like "123", "0", "10e3" are not recognized as valid bare keys
- * - Datetime normalization: Parser doesn't normalize datetime formats (space to T, lowercase z to Z)
- * - Control character handling: Some control characters in specific contexts
- * - TOML 1.1.0 features: Some TOML 1.1.0 spec features not fully supported
  */
 const KNOWN_VALID_FAILURES = [
-    // Bare keys that look like other token types - the lexer tokenizes these as keywords/numbers
-    // instead of treating them as bare keys in key position. Fixing requires context-aware lexing.
-    'key / alphanum',         // Uses all-digit keys like "123", "000111", "10e3"
-    'key / like-date',        // Uses date-like keys like "1979-05-27"
-    'key / start',            // Uses numeric keys in table headers like [2018_10]
-    'datetime / leap-year',   // Uses date-like keys like "2000-datetime"
-
     // Test suite inconsistency: datetime/milliseconds expects ".6" -> ".600" (padded)
     // but spec-1.1.0/common-27 expects ".5" -> ".5" (preserved). We preserve precision.
     'datetime / milliseconds',

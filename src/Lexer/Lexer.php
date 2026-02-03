@@ -562,6 +562,12 @@ final class Lexer
 
         // Check for date/time first (more specific patterns)
         if ($this->isDigit($this->peek())) {
+            // Check if this looks like a bare key (followed by = or . or ])
+            // This handles keys like "34-11", "1key", "2000-datetime"
+            if ($this->isKeyPosition()) {
+                return $this->scanBareKey($line, $column);
+            }
+
             $dateTimeToken = $this->tryScanDateTime($line, $column);
             if ($dateTimeToken !== null) {
                 return $dateTimeToken;
@@ -1228,6 +1234,113 @@ final class Lexer
         // TOML spec: unquoted-key = 1*( ALPHA / DIGIT / %x2D / %x5F )
         // Only A-Z, a-z, 0-9, hyphen (-), and underscore (_) are allowed
         return ctype_alnum($char) || $char === '-' || $char === '_';
+    }
+
+    /**
+     * Check if the current position appears to be in key context.
+     * Looks ahead past bare key characters to see if followed by '=', '.', or ']'.
+     *
+     * This helps distinguish between:
+     * - Keys like "34-11", "1key", "2000-datetime" (should be BARE_KEY)
+     * - Values like 34, 2000-01-01 (should be INTEGER or DATE)
+     */
+    private function isKeyPosition(): bool
+    {
+        $offset = 0;
+        $hasNonDigit = false;
+
+        // Skip past all valid bare key characters, tracking if we see non-digits
+        while (true) {
+            $char = $this->lookAhead($offset);
+            if ($char === null || ! $this->isBareKeyChar($char)) {
+                break;
+            }
+            // Check if this character is not a digit (letters, hyphens, underscores)
+            if (! $this->isDigit($char)) {
+                $hasNonDigit = true;
+            }
+            $offset++;
+        }
+
+        // If we didn't advance at all, not a bare key
+        if ($offset === 0) {
+            return false;
+        }
+
+        // Skip whitespace
+        $wsOffset = $offset;
+        while (true) {
+            $char = $this->lookAhead($wsOffset);
+            if ($char !== ' ' && $char !== "\t") {
+                break;
+            }
+            $wsOffset++;
+        }
+
+        $nextChar = $this->lookAhead($wsOffset);
+
+        // '=' unambiguously indicates key context
+        if ($nextChar === '=') {
+            return true;
+        }
+
+        // '.' could be dotted key separator or float decimal point
+        // If '.' is followed by a digit, it's a float (e.g., "3.14")
+        // If '.' is followed by whitespace or a key char, it's a dotted key (e.g., "key.subkey")
+        if ($nextChar === '.') {
+            $afterDot = $this->lookAhead($wsOffset + 1);
+            // If the char after '.' is a digit, this is a float, not a dotted key
+            if ($afterDot !== null && $this->isDigit($afterDot)) {
+                return false;
+            }
+
+            return true;
+        }
+
+        // ']' could be array value or table header key.
+        // If the token contains non-digit characters AND doesn't look like a valid
+        // date/datetime, it must be a bare key.
+        // Examples: "1key]", "2000-datetime]" must be keys (contain letters)
+        // But "2024-01-15]" could be a date, so don't treat as key
+        if ($nextChar === ']' && $hasNonDigit) {
+            // Check if it looks like a date pattern (YYYY-MM-DD)
+            // If it does, don't treat as bare key - let tryScanDateTime handle it
+            if (! $this->looksLikeDatePattern($offset)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if the token starting at current position looks like a date pattern.
+     * This is a quick heuristic check: 4 digits, hyphen, 2 digits, hyphen, 2 digits.
+     */
+    private function looksLikeDatePattern(int $length): bool
+    {
+        // Date pattern is exactly 10 chars: YYYY-MM-DD
+        if ($length !== 10) {
+            return false;
+        }
+
+        // Check pattern: digit digit digit digit - digit digit - digit digit
+        $pattern = [true, true, true, true, false, true, true, false, true, true];
+        for ($i = 0; $i < 10; $i++) {
+            $char = $this->lookAhead($i);
+            if ($char === null) {
+                return false;
+            }
+            $isDigit = $this->isDigit($char);
+            if ($pattern[$i] && ! $isDigit) {
+                return false;
+            }
+            if (! $pattern[$i] && $char !== '-') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

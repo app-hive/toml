@@ -111,14 +111,23 @@ describe('Lexer', function () {
             expect($tokens[1]->value)->toBe('abc');
         });
 
-        it('tokenizes all-digit strings as integers', function () {
-            // Numeric-only strings are parsed as integers
-            // The parser determines if they're used as keys
+        it('tokenizes all-digit strings as bare keys in key position', function () {
+            // Numeric-only strings in key position (followed by =) are bare keys
+            // The lexer uses lookahead to detect key context
             $lexer = new Lexer('123 = "value"');
             $tokens = $lexer->tokenize();
 
-            expect($tokens[0]->type)->toBe(TokenType::Integer);
+            expect($tokens[0]->type)->toBe(TokenType::BareKey);
             expect($tokens[0]->value)->toBe('123');
+        });
+
+        it('tokenizes all-digit strings as integers in value position', function () {
+            // Numeric-only strings in value position are integers
+            $lexer = new Lexer('key = 123');
+            $tokens = $lexer->tokenize();
+
+            expect($tokens[2]->type)->toBe(TokenType::Integer);
+            expect($tokens[2]->value)->toBe('123');
         });
 
         it('tokenizes bare keys with uppercase letters', function () {
