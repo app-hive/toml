@@ -26,11 +26,6 @@ const KNOWN_VALID_FAILURES = [
     'datetime / leap-year',   // Uses date-like keys like "2000-datetime"
     'comment / after-literal-no-ws', // Uses "inf", "nan", "true", "false" as keys
 
-    // Array of tables with subtables: [arr.subtab] after [[arr]] should apply to
-    // the current array element, allowing repeated [arr.subtab] definitions
-    'array / array-subtables',
-    'table / array-table-array',
-
     // Test suite inconsistency: datetime/milliseconds expects ".6" -> ".600" (padded)
     // but spec-1.1.0/common-27 expects ".5" -> ".5" (preserved). We preserve precision.
     'datetime / milliseconds',

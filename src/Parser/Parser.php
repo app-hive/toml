@@ -431,6 +431,13 @@ final class Parser
         // previous elements don't apply to the new element.
         $this->clearInlineTablePathsUnder($tablePath);
 
+        // Clear defined tables and implicit dotted key tables under this array path.
+        // When a new element is added to an array of tables, subtable definitions
+        // from previous elements should not block defining the same subtables
+        // for the new element.
+        $this->clearDefinedTablesUnder($tablePath);
+        $this->clearImplicitDottedKeyTablesUnder($tablePath);
+
         // Add a new element to the array
         $this->addArrayOfTablesElement($result, $keyParts, $startToken);
 
@@ -448,6 +455,32 @@ final class Parser
         foreach (array_keys($this->inlineTablePaths) as $path) {
             if ($this->pathStartsWith($path, $arrayPath)) {
                 unset($this->inlineTablePaths[$path]);
+            }
+        }
+    }
+
+    /**
+     * Clear defined tables that are under a given array of tables path.
+     * Called when a new element is added to an array of tables.
+     */
+    private function clearDefinedTablesUnder(string $arrayPath): void
+    {
+        foreach (array_keys($this->definedTables) as $path) {
+            if ($this->pathStartsWith($path, $arrayPath)) {
+                unset($this->definedTables[$path]);
+            }
+        }
+    }
+
+    /**
+     * Clear implicit dotted key tables that are under a given array of tables path.
+     * Called when a new element is added to an array of tables.
+     */
+    private function clearImplicitDottedKeyTablesUnder(string $arrayPath): void
+    {
+        foreach (array_keys($this->implicitDottedKeyTables) as $path) {
+            if ($this->pathStartsWith($path, $arrayPath)) {
+                unset($this->implicitDottedKeyTables[$path]);
             }
         }
     }
