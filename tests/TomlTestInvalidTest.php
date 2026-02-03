@@ -66,14 +66,6 @@ const KNOWN_INVALID_FAILURES = [
     // Array/table semantic validation
     'array / extend-defined-aot',
     'array / extending-table',
-    'array / tables-01',
-    'table / append-with-dotted-keys-01',
-    'table / append-with-dotted-keys-02',
-    'table / append-with-dotted-keys-03',
-    'table / array-implicit',
-    'table / duplicate-key-10',
-    'table / llbrace',
-    'table / rrbrace',
 
     // String/Unicode escape validation - TOML 1.1.0 allows \xNN byte escapes
     'string / basic-byte-escapes',

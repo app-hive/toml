@@ -65,6 +65,25 @@ final class Parser
     private array $inlineTablePaths = [];
 
     /**
+     * Track paths that are static arrays (defined via `key = [...]`).
+     * These cannot be extended with array of tables syntax `[[key]]`.
+     * Keys are dot-joined paths.
+     *
+     * @var array<string, bool>
+     */
+    private array $staticArrayPaths = [];
+
+    /**
+     * Track paths implicitly created as tables by array of tables headers.
+     * For example, [[a.b]] implicitly creates 'a' as a table.
+     * These cannot later be defined as array of tables.
+     * Keys are dot-joined paths.
+     *
+     * @var array<string, bool>
+     */
+    private array $implicitTablesByArrayOfTables = [];
+
+    /**
      * Create a new parser instance.
      *
      * @param  string  $source  The TOML source to parse
@@ -212,6 +231,8 @@ final class Parser
 
         // Check if the value is an inline table (starts with '{')
         $isInlineTable = $this->check(TokenType::LeftBrace);
+        // Check if the value is a static array (starts with '[')
+        $isStaticArray = $this->check(TokenType::LeftBracket);
 
         $value = $this->parseValue();
 
@@ -234,6 +255,11 @@ final class Parser
             $this->trackInlineTablePaths($fullKeyParts, is_array($value) ? $value : []);
         }
 
+        // If the value is a static array, track it so it can't be extended with [[]]
+        if ($isStaticArray && is_array($value)) {
+            $this->staticArrayPaths[implode('.', $fullKeyParts)] = true;
+        }
+
         // Expect newline or EOF after value
         if (! $this->isAtEnd() && ! $this->check(TokenType::Newline)) {
             $token = $this->peek();
@@ -250,19 +276,33 @@ final class Parser
 
     /**
      * Check if the next tokens form an array of tables header [[...]].
+     * For valid array-of-tables syntax, the two opening brackets must be adjacent
+     * (no whitespace between them). Same for closing brackets.
      */
     private function isArrayOfTables(): bool
     {
-        // We're at '[', check if next token is also '['
-        $savedPosition = $this->position;
-        $this->advance(); // consume first '['
+        // We're at '[', check if next token is also '[' AND they are adjacent
+        $firstBracket = $this->tokens[$this->position];
+        $nextPosition = $this->position + 1;
 
-        $isArray = $this->check(TokenType::LeftBracket);
+        if ($nextPosition >= count($this->tokens)) {
+            return false;
+        }
 
-        // Restore position
-        $this->position = $savedPosition;
+        $secondToken = $this->tokens[$nextPosition];
 
-        return $isArray;
+        // Must be another left bracket
+        if ($secondToken->type !== TokenType::LeftBracket) {
+            return false;
+        }
+
+        // Brackets must be adjacent (same line, column diff of 1)
+        if ($secondToken->line !== $firstBracket->line ||
+            $secondToken->column !== $firstBracket->column + 1) {
+            return false;
+        }
+
+        return true;
     }
 
     /**
@@ -278,8 +318,32 @@ final class Parser
         // Parse the table key (may be dotted)
         $keyParts = $this->parseDottedKey();
 
-        $this->expect(TokenType::RightBracket);
-        $this->expect(TokenType::RightBracket);
+        // Expect first closing bracket
+        $firstCloseBracket = $this->expect(TokenType::RightBracket);
+
+        // Expect second closing bracket - must be adjacent (no space between)
+        $nextToken = $this->peek();
+        if ($nextToken->type !== TokenType::RightBracket) {
+            throw new TomlParseException(
+                "Expected ], got {$nextToken->type->value}",
+                $nextToken->line,
+                $nextToken->column,
+                $this->source
+            );
+        }
+
+        // Validate brackets are adjacent
+        if ($nextToken->line !== $firstCloseBracket->line ||
+            $nextToken->column !== $firstCloseBracket->column + 1) {
+            throw new TomlParseException(
+                'Closing brackets must be adjacent in array of tables header (no space allowed)',
+                $nextToken->line,
+                $nextToken->column,
+                $this->source
+            );
+        }
+
+        $this->advance(); // consume second ']'
 
         // Expect newline or EOF after array of tables header
         if (! $this->isAtEnd() && ! $this->check(TokenType::Newline)) {
@@ -296,6 +360,16 @@ final class Parser
 
         // Build the table path string
         $tablePath = implode('.', $keyParts);
+
+        // Check if this path was already defined as a static array (via key = [...])
+        if (isset($this->staticArrayPaths[$tablePath])) {
+            throw new TomlParseException(
+                "Cannot define array of tables '{$tablePath}' because it was already defined as a static array",
+                $startToken->line,
+                $startToken->column,
+                $this->source
+            );
+        }
 
         // Check if this path was already defined as a regular table
         if (isset($this->definedTables[$tablePath]) && ! isset($this->arrayOfTablesPaths[$tablePath])) {
@@ -321,8 +395,29 @@ final class Parser
             return;
         }
 
+        // Check if this path was implicitly created as a table by a nested array of tables
+        // e.g., [[a.b]] implicitly creates 'a' as a table, so [[a]] should fail
+        if (isset($this->implicitTablesByArrayOfTables[$tablePath])) {
+            throw new TomlParseException(
+                "Cannot define '{$tablePath}' as array of tables because it was implicitly defined as a table",
+                $startToken->line,
+                $startToken->column,
+                $this->source
+            );
+        }
+
         // Check if this path or any parent path is within an inline table (immutable)
         $this->checkInlineTableImmutability($keyParts, $startToken);
+
+        // Track parent paths as implicit tables (they cannot become array of tables later)
+        // For [[a.b.c]], we track 'a' and 'a.b' as implicit tables
+        for ($i = 0; $i < count($keyParts) - 1; $i++) {
+            $partialPath = implode('.', array_slice($keyParts, 0, $i + 1));
+            // Only mark as implicit table if it's not already an array of tables
+            if (! isset($this->arrayOfTablesPaths[$partialPath])) {
+                $this->implicitTablesByArrayOfTables[$partialPath] = true;
+            }
+        }
 
         // Mark this path as an array of tables
         $this->arrayOfTablesPaths[$tablePath] = true;
@@ -369,6 +464,16 @@ final class Parser
         for ($i = 0; $i < count($keyParts) - 1; $i++) {
             $key = $keyParts[$i];
             $partialPath = implode('.', array_slice($keyParts, 0, $i + 1));
+
+            // Check if this path is a static array - cannot navigate into it
+            if (isset($this->staticArrayPaths[$partialPath])) {
+                throw new TomlParseException(
+                    "Cannot define array of tables under '{$partialPath}' which is a static array",
+                    $token->line,
+                    $token->column,
+                    $this->source
+                );
+            }
 
             if (! isset($current[$key])) {
                 $current[$key] = [];
@@ -736,6 +841,38 @@ final class Parser
         for ($i = 0; $i < count($keyParts) - 1; $i++) {
             $key = $keyParts[$i];
             $partialPath = implode('.', array_slice($keyParts, 0, $i + 1));
+
+            // Check if this path was explicitly defined as a table and we're trying to extend it
+            // from a different (parent) table context using dotted keys
+            if (isset($this->definedTables[$partialPath])) {
+                // If we're in a different table context trying to add via dotted keys, reject it
+                $currentTablePathStr = implode('.', $this->currentTablePath);
+                if ($partialPath !== $currentTablePathStr && ! str_starts_with($currentTablePathStr, $partialPath.'.')) {
+                    $token = $this->peek();
+                    throw new TomlParseException(
+                        "Cannot add keys to table '{$partialPath}' using dotted keys from table '{$currentTablePathStr}' - table was already explicitly defined",
+                        $token->line,
+                        $token->column,
+                        $this->source
+                    );
+                }
+            }
+
+            // Check if this path is an array of tables and we're trying to extend it
+            // from a different table context using dotted keys
+            if (isset($this->arrayOfTablesPaths[$partialPath])) {
+                $currentTablePathStr = implode('.', $this->currentTablePath);
+                // If we're not inside this array of tables path, reject
+                if (! str_starts_with($currentTablePathStr, $partialPath)) {
+                    $token = $this->peek();
+                    throw new TomlParseException(
+                        "Cannot add keys to array of tables '{$partialPath}' using dotted keys from table '{$currentTablePathStr}'",
+                        $token->line,
+                        $token->column,
+                        $this->source
+                    );
+                }
+            }
 
             if (! isset($current[$key])) {
                 $current[$key] = [];
